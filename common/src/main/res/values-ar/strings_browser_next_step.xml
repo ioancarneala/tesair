@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_next_permissions_title">اسمح بالاتصال</string>
+    <string name="browser_next_permissions_hint">يحتاج Android إلى إذن للاتصال بجهاز iPhone. وافق على الطلب على هذا الهاتف.</string>
+    <string name="browser_next_hotspot_title">تحقق من نقطة الاتصال</string>
+    <string name="browser_next_hotspot_hint">على هاتف Android هذا، شغّل نقطة الاتصال بالاسم وكلمة المرور المحفوظين.</string>
+    <string name="browser_next_bluetooth_title">شغّل Bluetooth</string>
+    <string name="browser_next_bluetooth_hint">يبدأ Bluetooth على هاتف Android هذا الاتصال بجهاز iPhone.</string>
+    <string name="browser_next_open_bluetooth">فتح إعدادات Bluetooth</string>
+    <string name="browser_next_retry_title">ابدأ CarPlay</string>
+    <string name="browser_next_retry_hint">خدمة الاتصال متوقفة. شغّلها مجددًا على هذا الهاتف.</string>
+    <string name="browser_next_starting_title">جارٍ بدء CarPlay</string>
+    <string name="browser_next_starting_hint">أبقِ هذا الهاتف متصلًا بالطاقة. يبدأ الاتصال تلقائيًا.</string>
+    <string name="browser_next_vpn_title">اسمح بالاتصال بسيارة Tesla</string>
+    <string name="browser_next_vpn_hint">تستخدم شبكة VPN أخرى اتصال هذا الهاتف. أوقفها ليتمكن TesAir من الاتصال بسيارة Tesla.</string>
+    <string name="browser_next_open_vpn">فتح إعدادات VPN</string>
+    <string name="browser_next_route_title">اسمح بالاتصال بسيارة Tesla</string>
+    <string name="browser_next_route_hint">وافق على طلب VPN من Android على هذا الهاتف. يتيح ذلك لمتصفح Tesla الوصول إلى CarPlay.</string>
+    <string name="browser_next_preparing_hint">تتم هذه الخطوة تلقائيًا. أبقِ هاتف Android هذا متصلًا بالطاقة والإنترنت.</string>
+    <string name="browser_next_address_title">تحقق من الإنترنت على هذا الهاتف</string>
+    <string name="browser_next_address_hint">لم يكتمل إعداد العنوان الآمن. تأكد من اتصال هاتف Android هذا بالإنترنت؛ تتكرر المحاولة تلقائيًا.</string>
+    <string name="browser_next_open_internet">فتح إعدادات الإنترنت</string>
+    <string name="browser_next_iphone_title">وصّل جهاز iPhone</string>
+    <string name="browser_next_iphone_hint">شغّل Wi-Fi وBluetooth على جهاز iPhone وأبقِه قريبًا؛ يتصل CarPlay تلقائيًا.</string>
+    <string name="browser_next_browser_title">افتح CarPlay في سيارة Tesla</string>
+    <string name="browser_next_browser_hint">جهاز iPhone متصل. أدخل هذا العنوان في متصفح Tesla.</string>
+    <string name="browser_next_video_title">جارٍ بدء عرض الصورة</string>
+    <string name="browser_next_video_hint">المتصفح متصل. أبقِ صفحة CarPlay مفتوحة حتى تظهر الصورة.</string>
+    <string name="browser_next_network_label">نقطة الاتصال الخاصة بك</string>
+    <string name="browser_next_address_label">عنوان متصفح Tesla</string>
+    <string name="browser_next_same_network">شبكة Wi-Fi في Tesla: %1$s</string>
+</resources>

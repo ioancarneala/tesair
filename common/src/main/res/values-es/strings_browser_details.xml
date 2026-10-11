@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_details_iphone">iPhone</string>
+    <string name="browser_details_browser">Imagen del navegador</string>
+    <string name="browser_details_background">Acceso en segundo plano</string>
+    <string name="browser_details_tesla">Conexión con Tesla</string>
+    <string name="browser_details_connected">Conectado</string>
+    <string name="browser_details_waiting">Esperando conexión</string>
+    <string name="browser_details_picture_ready">CarPlay en reproducción</string>
+    <string name="browser_details_picture_waiting">Preparando imagen…</string>
+    <string name="browser_details_allowed">Permitido</string>
+    <string name="browser_details_permission_needed">Se necesita permiso</string>
+    <string name="browser_details_enabled">Habilitada</string>
+    <string name="browser_details_not_needed">No se necesita para esta conexión</string>
+    <string name="browser_details_other_vpn">Hay otra VPN activa</string>
+    <string name="browser_details_starting">Iniciando…</string>
+    <string name="browser_details_not_ready">No está lista</string>
+    <string name="browser_details_show_technical">Mostrar detalles técnicos</string>
+    <string name="browser_details_hide_technical">Ocultar detalles técnicos</string>
+    <string name="browser_details_diagnostics">Diagnóstico</string>
+    <string name="browser_details_recovery">Recuperar la conexión</string>
+    <string name="browser_details_recovery_hint">Usa estos controles solo si CarPlay no responde. Al reconectar se interrumpe la sesión actual.</string>
+    <string name="browser_details_expansion">%1$s, %2$s</string>
+    <string name="browser_details_expanded">Expandido</string>
+    <string name="browser_details_collapsed">Contraído</string>
+    <string name="browser_details_address_idle">Disponible cuando se inicie CarPlay</string>
+    <string name="browser_details_direct_address">Dirección directa</string>
+</resources>

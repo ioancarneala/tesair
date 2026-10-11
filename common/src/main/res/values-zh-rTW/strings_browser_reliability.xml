@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">手機重新啟動後開啟</string>
+    <string name="browser_boot_hint">重新啟動後首次解鎖時，在背景啟動 CarPlay 伺服器。</string>
+    <string name="browser_diagnostics_hint">連線歷史會自動儲存在此手機上。發生中斷後，請先儲存報告，再重新安裝或清除應用程式資料。</string>
+</resources>

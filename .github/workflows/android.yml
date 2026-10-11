@@ -1,0 +1,75 @@
+name: Source checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: source-checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    env:
+      # Source CI must never provision authentication, certificates, or signing.
+      DIPLAY_AUTH_ASSETS_DIR: ""
+      BROWSER_CERTIFICATE_ENDPOINT: ""
+      BROWSER_CERTIFICATE_DOWNLOAD_TOKEN: ""
+      ANDROID_KEYSTORE_PATH: ""
+      ANDROID_KEYSTORE_PASSWORD: ""
+      ANDROID_KEY_ALIAS: ""
+      ANDROID_KEY_PASSWORD: ""
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Publication guard regression tests
+        run: python3 -m unittest discover -s tests -p 'test_public_tree.py' -v
+      - name: Check public source
+        run: python3 scripts/check_public_tree.py
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Browser player tests
+        run: node --test tests/browser-player.test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools platforms;android-37.0 build-tools;36.0.0 ndk;28.2.13676358
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Unit tests, lint and source-only debug builds
+        run: |
+          env -u DIPLAY_AUTH_ASSETS_DIR -u BROWSER_CERTIFICATE_ENDPOINT \
+            -u BROWSER_CERTIFICATE_DOWNLOAD_TOKEN -u ANDROID_KEYSTORE_PATH \
+            -u ANDROID_KEYSTORE_PASSWORD -u ANDROID_KEY_ALIAS -u ANDROID_KEY_PASSWORD \
+            ./gradlew :shared:testDebugUnitTest :common:testDebugUnitTest \
+            :mobile:lintDebug \
+            :mobile:assembleDebug :mobile:processDebugManifest :mobile:processReleaseManifest --stacktrace
+      - name: Verify application manifests
+        run: |
+          python3 scripts/verify-browser-manifests.py \
+            --debug mobile/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml \
+            --release mobile/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
+      - name: Check source again after builds
+        run: python3 scripts/check_public_tree.py
+      - name: Test reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports
+          retention-days: 7
+          if-no-files-found: ignore
+          path: |
+            shared/build/reports/tests/
+            common/build/reports/tests/
+            mobile/build/reports/lint-results-debug.html

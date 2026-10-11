@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">手机重启后启动</string>
+    <string name="browser_boot_hint">重启后首次解锁时，在后台启动 CarPlay 服务器。</string>
+    <string name="browser_diagnostics_hint">连接历史会自动保存在此手机上。发生中断后，请先保存报告，再重新安装或清除应用数据。</string>
+</resources>

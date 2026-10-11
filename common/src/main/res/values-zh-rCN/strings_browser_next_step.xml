@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_next_permissions_title">允许连接</string>
+    <string name="browser_next_permissions_hint">Android 需要获得连接 iPhone 的权限。请在此手机上批准请求。</string>
+    <string name="browser_next_hotspot_title">检查热点</string>
+    <string name="browser_next_hotspot_hint">在此 Android 手机上，使用已保存的名称和密码开启热点。</string>
+    <string name="browser_next_bluetooth_title">开启蓝牙</string>
+    <string name="browser_next_bluetooth_hint">此 Android 手机通过蓝牙启动与 iPhone 的连接。</string>
+    <string name="browser_next_open_bluetooth">打开蓝牙设置</string>
+    <string name="browser_next_retry_title">启动 CarPlay</string>
+    <string name="browser_next_retry_hint">连接服务未运行。请在此手机上重新启动。</string>
+    <string name="browser_next_starting_title">正在启动 CarPlay</string>
+    <string name="browser_next_starting_hint">请保持此手机接通电源。连接正在自动启动。</string>
+    <string name="browser_next_vpn_title">允许连接 Tesla</string>
+    <string name="browser_next_vpn_hint">另一个 VPN 正在使用此手机的连接。请将其关闭，让 TesAir 连接到 Tesla。</string>
+    <string name="browser_next_open_vpn">打开 VPN 设置</string>
+    <string name="browser_next_route_title">允许连接 Tesla</string>
+    <string name="browser_next_route_hint">请在此手机上批准 Android 的 VPN 请求，让 Tesla 浏览器能够访问 CarPlay。</string>
+    <string name="browser_next_preparing_hint">此步骤会自动完成。请保持此 Android 手机接通电源并连接互联网。</string>
+    <string name="browser_next_address_title">检查此手机的互联网连接</string>
+    <string name="browser_next_address_hint">安全地址尚未设置完成。请检查此 Android 手机能否上网；设置会自动重试。</string>
+    <string name="browser_next_open_internet">打开互联网设置</string>
+    <string name="browser_next_iphone_title">连接 iPhone</string>
+    <string name="browser_next_iphone_hint">在 iPhone 上开启 Wi-Fi 和蓝牙，并将其放在附近；CarPlay 会自动连接。</string>
+    <string name="browser_next_browser_title">在 Tesla 中打开 CarPlay</string>
+    <string name="browser_next_browser_hint">iPhone 已连接。请在 Tesla 浏览器中输入此地址。</string>
+    <string name="browser_next_video_title">正在显示画面</string>
+    <string name="browser_next_video_hint">浏览器已连接。请保持 CarPlay 页面打开，等待画面显示。</string>
+    <string name="browser_next_network_label">你的热点</string>
+    <string name="browser_next_address_label">Tesla 浏览器地址</string>
+    <string name="browser_next_same_network">Tesla Wi-Fi：%1$s</string>
+</resources>

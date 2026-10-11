@@ -1,0 +1,35 @@
+<resources>
+    <style name="Theme.Xcertplay" parent="android:Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#A6C8FF</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:navigationBarColor">#0C111B</item>
+        <item name="android:statusBarColor">#0C111B</item>
+        <item name="android:windowBackground">#0C111B</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+    <style name="Theme.Browser" parent="Theme.Xcertplay">
+        <item name="android:alertDialogTheme">@style/Theme.Browser.Dialog</item>
+    </style>
+    <style name="Theme.Browser.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/browser_dialog_background</item>
+        <item name="android:colorBackground">#151F2D</item>
+        <item name="android:textColorPrimary">#F1F5FC</item>
+        <item name="android:textColorSecondary">#A8B6CA</item>
+        <item name="android:colorAccent">#A6C8FF</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:backgroundDimAmount">0.65</item>
+        <item name="android:buttonBarButtonStyle">@style/Browser.DialogButton</item>
+    </style>
+    <style name="Browser.DialogButton" parent="android:Widget.Material.Button.Borderless">
+        <item name="android:textAllCaps">false</item>
+        <item name="android:minHeight">48dp</item>
+    </style>
+    <style name="Theme.AdbCluster" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowDisablePreview">true</item>
+    </style>
+</resources>

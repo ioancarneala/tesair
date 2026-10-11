@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_preferences_picture">畫面</string>
+    <string name="settings_browser_preferences_help">協助</string>
+    <string name="settings_browser_preferences_connection_summary">iPhone、熱點與自動啟動</string>
+    <string name="settings_browser_preferences_picture_summary">大小、清晰度與外觀</string>
+    <string name="settings_browser_preferences_help_summary">設定指南與連線報告</string>
+    <string name="settings_browser_preferences_not_set">未設定</string>
+    <string name="settings_browser_preferences_review_setup">檢查連線設定</string>
+    <string name="settings_browser_preferences_auto_open">開啟時連線</string>
+    <string name="settings_browser_preferences_auto_open_hint">開啟此 App 時啟動接收服務。</string>
+    <string name="settings_browser_preferences_after_restart">重新啟動後恢復</string>
+    <string name="settings_browser_preferences_after_restart_hint">手機重新啟動後恢復上次執行的工作階段。Android 可能要求解鎖。</string>
+    <string name="settings_browser_preferences_driving_hint">將 CarPlay 控制項移近右側駕駛。重新連線後生效。</string>
+    <string name="settings_browser_preferences_appearance">外觀</string>
+    <string name="settings_browser_preferences_clock_hint">使用此手機的本地時間。</string>
+    <string name="settings_browser_preferences_help_hint">重新查看連線步驟，不會清除已儲存的設定。</string>
+    <string name="settings_browser_preferences_setup_guide">開啟設定指南</string>
+    <string name="settings_browser_preferences_report_hint">連線報告會自動儲存在此手機上。僅在需要協助時匯出。</string>
+    <string name="settings_browser_preferences_version">版本 %1$s</string>
+    <string name="settings_browser_preferences_independent">TesAir 是獨立專案，與 Apple、Tesla 或 Google 無關聯，也未獲其認可。</string>
+    <string name="settings_browser_preferences_interface_size">介面大小</string>
+    <string name="settings_browser_preferences_quality">視訊畫質</string>
+    <string name="settings_browser_preferences_smoothness">流暢度</string>
+    <string name="settings_browser_preferences_compact">緊湊</string>
+    <string name="settings_browser_preferences_comfortable">舒適</string>
+    <string name="settings_browser_preferences_large">大</string>
+    <string name="settings_browser_preferences_extra_large">特大</string>
+    <string name="settings_browser_preferences_balanced">均衡</string>
+    <string name="settings_browser_preferences_sharper">更清晰</string>
+    <string name="settings_browser_preferences_sharpest">最清晰</string>
+    <string name="settings_browser_preferences_smoother">更流暢</string>
+    <string name="settings_browser_preferences_custom_size">自訂大小</string>
+    <string name="settings_browser_preferences_custom_quality">自訂畫質</string>
+    <string name="settings_browser_preferences_custom_motion">自訂流暢度</string>
+    <string name="settings_browser_preferences_keep_size">保留目前大小</string>
+    <string name="settings_browser_preferences_keep_quality">保留目前畫質</string>
+    <string name="settings_browser_preferences_keep_motion">保留目前流暢度</string>
+    <string name="settings_browser_preferences_size_hint">放大圖示和文字，不改變畫質。套用更改會重新連線 CarPlay。</string>
+    <string name="settings_browser_preferences_video_hint">更清晰、更流暢的視訊需要更多處理能力。重新連線後生效。</string>
+    <string name="settings_browser_preferences_credits">接收器以 xcertplay（GPL-3.0）為基礎。介面改編自 DiPlay 和 DiAuto（AGPL-3.0）。\n\n使用 AndroidX、Bouncy Castle、JmDNS、SLF4J 及其他開放原始碼程式庫。專案包含原始碼和授權聲明。\n\nApple、iPhone 和 CarPlay 是 Apple Inc. 的商標。Tesla 是 Tesla, Inc. 的商標。Android 是 Google LLC 的商標。\n\n教學插圖根據使用者提供的參考資料為 TesAir 生成。</string>
+</resources>

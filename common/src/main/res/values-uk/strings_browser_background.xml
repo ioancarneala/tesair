@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_background_required">Дозвольте роботу у фоні, щоб CarPlay залишався підключеним після блокування.</string>
+    <string name="browser_background_restricted">Android обмежує роботу у фоні. Дозвольте її в налаштуваннях застосунку.</string>
+</resources>

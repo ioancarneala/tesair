@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_next_permissions_title">Дозвольте підключення</string>
+    <string name="browser_next_permissions_hint">Android потрібен дозвіл для підключення до iPhone. Підтвердьте запит на цьому телефоні.</string>
+    <string name="browser_next_hotspot_title">Перевірте точку доступу</string>
+    <string name="browser_next_hotspot_hint">На цьому телефоні Android увімкніть точку доступу зі збереженими назвою та паролем.</string>
+    <string name="browser_next_bluetooth_title">Увімкніть Bluetooth</string>
+    <string name="browser_next_bluetooth_hint">Bluetooth на цьому телефоні Android запускає підключення до iPhone.</string>
+    <string name="browser_next_open_bluetooth">Відкрити налаштування Bluetooth</string>
+    <string name="browser_next_retry_title">Запустіть CarPlay</string>
+    <string name="browser_next_retry_hint">Служба підключення не працює. Запустіть її знову на цьому телефоні.</string>
+    <string name="browser_next_starting_title">Запускаємо CarPlay</string>
+    <string name="browser_next_starting_hint">Не відключайте цей телефон від живлення. Підключення запускається автоматично.</string>
+    <string name="browser_next_vpn_title">Дозвольте підключення до Tesla</string>
+    <string name="browser_next_vpn_hint">Інша VPN використовує підключення цього телефону. Вимкніть її, щоб TesAir міг підключитися до Tesla.</string>
+    <string name="browser_next_open_vpn">Відкрити налаштування VPN</string>
+    <string name="browser_next_route_title">Дозвольте підключення до Tesla</string>
+    <string name="browser_next_route_hint">Підтвердьте запит Android на VPN на цьому телефоні. Це надасть браузеру Tesla доступ до CarPlay.</string>
+    <string name="browser_next_preparing_hint">Цей крок виконується автоматично. Не відключайте цей телефон Android від живлення та інтернету.</string>
+    <string name="browser_next_address_title">Перевірте інтернет на цьому телефоні</string>
+    <string name="browser_next_address_hint">Налаштування захищеної адреси ще не завершено. Перевірте інтернет на цьому телефоні Android; спроба повториться автоматично.</string>
+    <string name="browser_next_open_internet">Відкрити налаштування інтернету</string>
+    <string name="browser_next_iphone_title">Підключіть iPhone</string>
+    <string name="browser_next_iphone_hint">На iPhone увімкніть Wi-Fi та Bluetooth. Тримайте його поруч; CarPlay підключиться автоматично.</string>
+    <string name="browser_next_browser_title">Відкрийте CarPlay у Tesla</string>
+    <string name="browser_next_browser_hint">iPhone підключено. Введіть цю адресу в браузері Tesla.</string>
+    <string name="browser_next_video_title">Запускаємо зображення</string>
+    <string name="browser_next_video_hint">Браузер підключено. Залиште сторінку CarPlay відкритою, доки не з’явиться зображення.</string>
+    <string name="browser_next_network_label">Ваша точка доступу</string>
+    <string name="browser_next_address_label">Адреса для браузера Tesla</string>
+    <string name="browser_next_same_network">Wi-Fi Tesla: %1$s</string>
+</resources>

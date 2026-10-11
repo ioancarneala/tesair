@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_preferences_picture">Picture</string>
+    <string name="settings_browser_preferences_help">Help</string>
+    <string name="settings_browser_preferences_connection_summary">iPhone, hotspot and automatic start</string>
+    <string name="settings_browser_preferences_picture_summary">Size, sharpness and appearance</string>
+    <string name="settings_browser_preferences_help_summary">Setup guide and connection reports</string>
+    <string name="settings_browser_preferences_not_set">Not set</string>
+    <string name="settings_browser_preferences_review_setup">Review connection setup</string>
+    <string name="settings_browser_preferences_auto_open">Connect on open</string>
+    <string name="settings_browser_preferences_auto_open_hint">Start the receiver when you open this app.</string>
+    <string name="settings_browser_preferences_after_restart">Resume after restart</string>
+    <string name="settings_browser_preferences_after_restart_hint">Resume your last running session after this phone restarts. Android may require an unlock.</string>
+    <string name="settings_browser_preferences_driving_hint">Move CarPlay controls toward the right-hand driver. Applies after reconnecting.</string>
+    <string name="settings_browser_preferences_appearance">Appearance</string>
+    <string name="settings_browser_preferences_clock_hint">Uses this phone’s local time.</string>
+    <string name="settings_browser_preferences_help_hint">Follow the connection steps again without clearing your saved setup.</string>
+    <string name="settings_browser_preferences_setup_guide">Open setup guide</string>
+    <string name="settings_browser_preferences_report_hint">Connection reports are saved automatically on this phone. Export one only when you need help.</string>
+    <string name="settings_browser_preferences_version">Version %1$s</string>
+    <string name="settings_browser_preferences_independent">TesAir is independent and is not affiliated with or endorsed by Apple, Tesla or Google.</string>
+    <string name="settings_browser_preferences_interface_size">Interface size</string>
+    <string name="settings_browser_preferences_quality">Video quality</string>
+    <string name="settings_browser_preferences_smoothness">Smoothness</string>
+    <string name="settings_browser_preferences_compact">Compact</string>
+    <string name="settings_browser_preferences_comfortable">Comfortable</string>
+    <string name="settings_browser_preferences_large">Large</string>
+    <string name="settings_browser_preferences_extra_large">Extra large</string>
+    <string name="settings_browser_preferences_balanced">Balanced</string>
+    <string name="settings_browser_preferences_sharper">Sharper</string>
+    <string name="settings_browser_preferences_sharpest">Sharpest</string>
+    <string name="settings_browser_preferences_smoother">Smoother</string>
+    <string name="settings_browser_preferences_custom_size">Custom size</string>
+    <string name="settings_browser_preferences_custom_quality">Custom quality</string>
+    <string name="settings_browser_preferences_custom_motion">Custom smoothness</string>
+    <string name="settings_browser_preferences_keep_size">Keep current size</string>
+    <string name="settings_browser_preferences_keep_quality">Keep current quality</string>
+    <string name="settings_browser_preferences_keep_motion">Keep current smoothness</string>
+    <string name="settings_browser_preferences_size_hint">Choose larger icons and text without changing picture quality. Applying a change reconnects CarPlay.</string>
+    <string name="settings_browser_preferences_video_hint">Sharper video and smoother motion need more processing. Applies after reconnecting.</string>
+    <string name="settings_browser_preferences_credits">Receiver based on xcertplay (GPL-3.0). Interface adapted from DiPlay and DiAuto (AGPL-3.0).\n\nUses AndroidX, Bouncy Castle, JmDNS, SLF4J and other open-source libraries. Source and license notices are provided with the project.\n\nApple, iPhone and CarPlay are trademarks of Apple Inc. Tesla is a trademark of Tesla, Inc. Android is a trademark of Google LLC.\n\nInstructional illustrations were generated for TesAir using user-supplied references.</string>
+</resources>

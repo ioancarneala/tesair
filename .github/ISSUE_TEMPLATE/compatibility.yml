@@ -1,0 +1,50 @@
+name: Device compatibility
+description: Report a tested device and the conditions of the test.
+title: "[Compatibility] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        A report describes a particular device and software version, not all phones
+        from that manufacturer. Do not upload APKs, credentials, raw logs or photos
+        containing personal information.
+  - type: input
+    id: revision
+    attributes:
+      label: TesAir version or source commit
+    validations:
+      required: true
+  - type: textarea
+    id: devices
+    attributes:
+      label: Tested setup
+      description: Model names and software versions only. Never include serial numbers, hotspot passwords or account details.
+      placeholder: |
+        Android model and OS:
+        iPhone model and iOS:
+        Tesla model/software or desktop browser/version:
+        Hotspot internet available: yes / no
+    validations:
+      required: true
+  - type: textarea
+    id: results
+    attributes:
+      label: What you tested
+      description: For each item, state passed, failed or not tested. Include test duration.
+      placeholder: |
+        Initial connection:
+        Video and touch:
+        Audio and calls through iPhone Bluetooth:
+        Android screen locked:
+        Reconnection after leaving/rejoining hotspot:
+        Android reboot and service recovery:
+        Test duration:
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy
+      options:
+        - label: This report contains no credentials, raw device reports or personal data.
+          required: true

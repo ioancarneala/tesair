@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_preferences_picture">Imagen</string>
+    <string name="settings_browser_preferences_help">Ayuda</string>
+    <string name="settings_browser_preferences_connection_summary">iPhone, punto de acceso e inicio automático</string>
+    <string name="settings_browser_preferences_picture_summary">Tamaño, nitidez y apariencia</string>
+    <string name="settings_browser_preferences_help_summary">Guía y registros de conexión</string>
+    <string name="settings_browser_preferences_not_set">Sin configurar</string>
+    <string name="settings_browser_preferences_review_setup">Revisar la conexión</string>
+    <string name="settings_browser_preferences_auto_open">Conectar al abrir</string>
+    <string name="settings_browser_preferences_auto_open_hint">Inicia el receptor al abrir esta app.</string>
+    <string name="settings_browser_preferences_after_restart">Reanudar tras reiniciar</string>
+    <string name="settings_browser_preferences_after_restart_hint">Reanuda la última sesión activa al reiniciar este teléfono. Android puede pedir desbloquearlo.</string>
+    <string name="settings_browser_preferences_driving_hint">Acerca los controles al conductor situado a la derecha. Se aplica al reconectar.</string>
+    <string name="settings_browser_preferences_appearance">Apariencia</string>
+    <string name="settings_browser_preferences_clock_hint">Usa la hora local de este teléfono.</string>
+    <string name="settings_browser_preferences_help_hint">Sigue los pasos de conexión sin borrar la configuración guardada.</string>
+    <string name="settings_browser_preferences_setup_guide">Abrir guía</string>
+    <string name="settings_browser_preferences_report_hint">Los registros se guardan automáticamente en este teléfono. Expórtalos solo cuando necesites ayuda.</string>
+    <string name="settings_browser_preferences_version">Versión %1$s</string>
+    <string name="settings_browser_preferences_independent">TesAir es independiente y no está afiliado ni cuenta con el respaldo de Apple, Tesla o Google.</string>
+    <string name="settings_browser_preferences_interface_size">Tamaño de interfaz</string>
+    <string name="settings_browser_preferences_quality">Calidad de vídeo</string>
+    <string name="settings_browser_preferences_smoothness">Fluidez</string>
+    <string name="settings_browser_preferences_compact">Compacto</string>
+    <string name="settings_browser_preferences_comfortable">Cómodo</string>
+    <string name="settings_browser_preferences_large">Grande</string>
+    <string name="settings_browser_preferences_extra_large">Muy grande</string>
+    <string name="settings_browser_preferences_balanced">Equilibrada</string>
+    <string name="settings_browser_preferences_sharper">Más nítida</string>
+    <string name="settings_browser_preferences_sharpest">Máxima nitidez</string>
+    <string name="settings_browser_preferences_smoother">Más fluida</string>
+    <string name="settings_browser_preferences_custom_size">Tamaño personalizado</string>
+    <string name="settings_browser_preferences_custom_quality">Calidad personalizada</string>
+    <string name="settings_browser_preferences_custom_motion">Fluidez personalizada</string>
+    <string name="settings_browser_preferences_keep_size">Mantener tamaño actual</string>
+    <string name="settings_browser_preferences_keep_quality">Mantener calidad actual</string>
+    <string name="settings_browser_preferences_keep_motion">Mantener fluidez actual</string>
+    <string name="settings_browser_preferences_size_hint">Elige iconos y texto más grandes sin cambiar la calidad de imagen. Aplicar un cambio reconecta CarPlay.</string>
+    <string name="settings_browser_preferences_video_hint">Más nitidez y fluidez requieren más procesamiento. Se aplica al reconectar.</string>
+    <string name="settings_browser_preferences_credits">Receptor basado en xcertplay (GPL-3.0). Interfaz adaptada de DiPlay y DiAuto (AGPL-3.0).\n\nUtiliza AndroidX, Bouncy Castle, JmDNS, SLF4J y otras bibliotecas de código abierto. El proyecto incluye el código fuente y los avisos de licencia.\n\nApple, iPhone y CarPlay son marcas de Apple Inc. Tesla es una marca de Tesla, Inc. Android es una marca de Google LLC.\n\nLas ilustraciones de las instrucciones se generaron para TesAir a partir de referencias aportadas por el usuario.</string>
+</resources>

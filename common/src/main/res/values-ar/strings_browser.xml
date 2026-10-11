@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_carplay_size_value">%1$d مم</string>
+    <string name="settings_browser_carplay_size_hint">تجعل القيم الأقل أيقونات CarPlay والنصوص أكبر. اضبط القيمة من 100 إلى 400 مم بخطوات قدرها 50 مم. يؤدي تطبيق التغيير إلى إعادة اتصال CarPlay؛ وتبقى دقة الفيديو كما هي.</string>
+    <string name="settings_browser_display_summary">المظهر وحجم CarPlay والدقة ومعدل إطارات المتصفح</string>
+    <string name="settings_browser_video_profile">فيديو H.264 مباشر وتشغيل بزمن استجابة منخفض. يُنصح بمعدل 30 إطارًا في الثانية، ويمكن اختيار 60 لحركة أكثر سلاسة. تُطبّق تغييرات معدل الإطارات وحجم CarPlay بعد إعادة الاتصال.</string>
+    <string name="browser_address_title">اتصال متصفح Tesla (تجريبي)</string>
+    <string name="browser_address_description">يستخدم عنوان VPN محليًا ليتمكن متصفح Tesla من الوصول إلى هذا الهاتف. يبقى الفيديو على شبكة نقطة الاتصال. فعّله مرة واحدة؛ وسيبدأ تلقائيًا مع TesAir.</string>
+    <string name="browser_address_enable">تفعيل اتصال Tesla</string>
+    <string name="browser_address_disable">تعطيل</string>
+    <string name="browser_address_active">✓ العنوان المحلي جاهز</string>
+    <string name="browser_address_starting">جارٍ تجهيز الاتصال المحلي…</string>
+    <string name="browser_address_other_vpn">هناك اتصال VPN آخر نشط. افصله قبل تفعيل اتصال Tesla.</string>
+    <string name="browser_address_error">تعذّر بدء الاتصال المحلي. عطّله وحاول مجددًا.</string>
+    <string name="browser_address_permission">يلزم منح إذن الاتصال المحلي. فعّله مجددًا للمتابعة.</string>
+    <string name="browser_address_off">الاتصال المحلي متوقف</string>
+    <string name="browser_address_wireless_only">متاح مع CarPlay اللاسلكي. يستخدم CarPlay عبر USB اتصال VPN خاصًا به.</string>
+    <string name="browser_address_notification_channel">عنوان متصفح Tesla</string>
+    <string name="browser_address_notification_title">عنوان متصفح Tesla مفعّل</string>
+    <string name="browser_address_notification_text">وصول محلي فقط · تبقى حركة الإنترنت الأخرى دون تغيير</string>
+    <string name="browser_battery_ready">✓ الاتصال في الخلفية مسموح</string>
+    <string name="browser_battery_required">قد يوقف تحسين البطارية الاتصال مؤقتًا عندما يدخل الهاتف في وضع السكون.</string>
+    <string name="browser_battery_allow">السماح بالاتصال في الخلفية</string>
+    <string name="browser_battery_unavailable">افتح إعدادات البطارية في Android واسمح لـ TesAir بالعمل في الخلفية دون قيود.</string>
+    <string name="settings_browser_resolution_hint" formatted="false">من 30 إلى 160 بالمئة من إعداد فيديو المتصفح الحالي؛ تحافظ القيمة 100 على الجودة الافتراضية. ترفع القيم الأعلى عبء فك الترميز. الحد الأقصى هو 3840 × 2160، لذلك قد تُقيّد القيمة 160. يُطبّق التغيير عند الاتصال التالي. يظل المتصفح يملأ النافذة ويتكيّف مع حجمها بسلاسة.</string>
+    <string name="settings_browser_resolution_preview">مساحة الفيديو عند الاتصال التالي: %1$d × %2$d بكسل (وفقًا لآخر نافذة للمتصفح)</string>
+    <string name="settings_browser_audio_destination">وجهة الصوت (تجريبي)</string>
+    <string name="settings_browser_audio_oneplus">عبر OnePlus</string>
+    <string name="settings_browser_audio_iphone">بلوتوث iPhone المباشر</string>
+    <string name="settings_browser_audio_destination_hint">وضع تجريبي. لاستخدام بلوتوث iPhone المباشر، أقرن iPhone ببلوتوث Tesla للموسيقى والمكالمات. تُطبّق التغييرات عند الاتصال التالي.</string>
+</resources>

@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_next_permissions_title">Allow the connection</string>
+    <string name="browser_next_permissions_hint">Android needs permission to connect to your iPhone. Allow the request on this phone.</string>
+    <string name="browser_next_hotspot_title">Check your hotspot</string>
+    <string name="browser_next_hotspot_hint">On this Android phone, turn on the hotspot using your saved name and password.</string>
+    <string name="browser_next_bluetooth_title">Turn on Bluetooth</string>
+    <string name="browser_next_bluetooth_hint">Bluetooth on this Android phone starts the connection to your iPhone.</string>
+    <string name="browser_next_open_bluetooth">Open Bluetooth settings</string>
+    <string name="browser_next_retry_title">Start CarPlay</string>
+    <string name="browser_next_retry_hint">The connection service is not running. Start it again on this phone.</string>
+    <string name="browser_next_starting_title">Starting CarPlay</string>
+    <string name="browser_next_starting_hint">Keep this phone powered. The connection is starting automatically.</string>
+    <string name="browser_next_vpn_title">Allow the Tesla connection</string>
+    <string name="browser_next_vpn_hint">Another VPN is using this phone’s connection. Turn it off so TesAir can connect to your Tesla.</string>
+    <string name="browser_next_open_vpn">Open VPN settings</string>
+    <string name="browser_next_route_title">Allow the Tesla connection</string>
+    <string name="browser_next_route_hint">Approve Android’s VPN request on this phone. It lets the Tesla browser reach CarPlay.</string>
+    <string name="browser_next_preparing_hint">This happens automatically. Keep this Android phone powered and connected to the internet.</string>
+    <string name="browser_next_address_title">Check this phone’s internet</string>
+    <string name="browser_next_address_hint">Secure address setup has not finished. Check that this Android phone has internet; setup retries automatically.</string>
+    <string name="browser_next_open_internet">Open internet settings</string>
+    <string name="browser_next_iphone_title">Connect your iPhone</string>
+    <string name="browser_next_iphone_hint">On your iPhone, turn on Wi-Fi and Bluetooth. Keep it nearby; CarPlay connects automatically.</string>
+    <string name="browser_next_browser_title">Open CarPlay in your Tesla</string>
+    <string name="browser_next_browser_hint">Your iPhone is connected. Enter this address in the Tesla browser.</string>
+    <string name="browser_next_video_title">Starting your picture</string>
+    <string name="browser_next_video_hint">The browser is connected. Leave its CarPlay page open while the picture starts.</string>
+    <string name="browser_next_network_label">Your hotspot</string>
+    <string name="browser_next_address_label">Tesla browser address</string>
+    <string name="browser_next_same_network">Tesla Wi-Fi: %1$s</string>
+</resources>

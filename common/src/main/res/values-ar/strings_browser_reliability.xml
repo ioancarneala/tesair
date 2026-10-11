@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">البدء بعد إعادة تشغيل الهاتف</string>
+    <string name="browser_boot_hint">تشغيل خادم CarPlay في الخلفية بعد أول إلغاء قفل عقب إعادة التشغيل.</string>
+    <string name="browser_diagnostics_hint">يُحفظ سجل الاتصال تلقائيًا على هذا الهاتف. بعد انقطاع الاتصال، احفظ تقريرًا قبل إعادة التثبيت أو مسح بيانات التطبيق.</string>
+</resources>

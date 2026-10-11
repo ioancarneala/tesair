@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">Start after phone restarts</string>
+    <string name="browser_boot_hint">Start the CarPlay server in the background after the first unlock following a restart.</string>
+    <string name="browser_diagnostics_hint">Connection history is saved automatically on this phone. After an interruption, save a report before reinstalling or clearing app data.</string>
+</resources>

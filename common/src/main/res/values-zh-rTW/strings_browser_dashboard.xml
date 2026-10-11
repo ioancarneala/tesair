@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_dashboard_brand">TesAir</string>
+    <string name="browser_dashboard_ready">CarPlay 已就緒</string>
+    <string name="browser_dashboard_ready_hint">瀏覽器正在顯示 CarPlay。你可以關閉這支手機的螢幕。</string>
+    <string name="browser_dashboard_open_browser">連接瀏覽器</string>
+    <string name="browser_dashboard_open_browser_hint">iPhone 已連接。請在另一個螢幕上開啟下方位址。</string>
+    <string name="browser_dashboard_connecting">正在連接 iPhone</string>
+    <string name="browser_dashboard_connecting_hint">請將 iPhone 放在附近，並開啟 Wi-Fi 和藍牙。連線將自動恢復。</string>
+    <string name="browser_dashboard_waiting">準備連接</string>
+    <string name="browser_dashboard_connection">連線</string>
+    <string name="browser_dashboard_iphone_connected">iPhone 已連接</string>
+    <string name="browser_dashboard_iphone_waiting">等待 iPhone</string>
+    <string name="browser_dashboard_video_ready">瀏覽器已收到 CarPlay</string>
+    <string name="browser_dashboard_video_waiting">瀏覽器已連接 · 等待影片</string>
+    <string name="browser_dashboard_browser_waiting">等待瀏覽器</string>
+    <string name="browser_dashboard_background_ready">已驗證 Android 背景權限</string>
+    <string name="browser_dashboard_background_needed">允許在背景執行以保持可靠連線</string>
+    <string name="browser_dashboard_route_ready">Tesla 連線已就緒</string>
+    <string name="browser_dashboard_network_title">1. 加入此網路</string>
+    <string name="browser_dashboard_network_instruction">將 iPhone 和 Tesla 或執行瀏覽器的裝置連接到此 Wi-Fi 網路。</string>
+    <string name="browser_dashboard_network_missing">請在連線設定中設定網路</string>
+    <string name="browser_dashboard_password">密碼：%1$s</string>
+    <string name="browser_dashboard_show_password">顯示密碼</string>
+    <string name="browser_dashboard_hide_password">隱藏密碼</string>
+    <string name="browser_dashboard_browser_title">2. 在瀏覽器中開啟</string>
+    <string name="browser_dashboard_browser_instruction">開啟此網址。CarPlay 出現後，將頁面加入書籤。</string>
+    <string name="browser_dashboard_address_missing">安全位址需要設定</string>
+    <string name="browser_dashboard_server_starting">正在準備瀏覽器位址…</string>
+    <string name="browser_dashboard_address_help">請將這支手機連上網際網路，以準備安全的瀏覽器網址，然後再試一次。</string>
+    <string name="browser_dashboard_show_details">連線詳細資訊</string>
+    <string name="browser_dashboard_hide_details">隱藏詳細資訊</string>
+    <string name="browser_dashboard_disable_route">關閉 Tesla 連線</string>
+    <string name="browser_dashboard_checked">✓ %1$s</string>
+    <string name="browser_dashboard_pending">○ %1$s</string>
+    <string name="browser_dashboard_viewport">瀏覽器尺寸：%1$d × %2$d</string>
+    <string name="browser_dashboard_setup_attention">檢查連線設定</string>
+    <string name="browser_dashboard_setup_attention_hint">自動重試已暫停。請檢查已儲存的熱點資訊和 iPhone 連線，然後再試一次。</string>
+    <string name="browser_dashboard_review_setup">檢查連線設定</string>
+    <string name="browser_https_preparing">正在準備安全位址…</string>
+    <string name="browser_https_retry">正在等待網路連線以完成設定</string>
+    <string name="browser_https_unavailable">安全位址設定需要處理</string>
+</resources>

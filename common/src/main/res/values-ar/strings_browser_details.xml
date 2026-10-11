@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_details_iphone">iPhone</string>
+    <string name="browser_details_browser">صورة المتصفح</string>
+    <string name="browser_details_background">العمل في الخلفية</string>
+    <string name="browser_details_tesla">الاتصال بسيارة Tesla</string>
+    <string name="browser_details_connected">متصل</string>
+    <string name="browser_details_waiting">بانتظار الاتصال</string>
+    <string name="browser_details_picture_ready">CarPlay يعمل</string>
+    <string name="browser_details_picture_waiting">جارٍ تجهيز الصورة…</string>
+    <string name="browser_details_allowed">مسموح</string>
+    <string name="browser_details_permission_needed">يلزم الإذن</string>
+    <string name="browser_details_enabled">مفعّل</string>
+    <string name="browser_details_not_needed">غير مطلوب لهذا الاتصال</string>
+    <string name="browser_details_other_vpn">هناك شبكة VPN أخرى نشطة</string>
+    <string name="browser_details_starting">جارٍ البدء…</string>
+    <string name="browser_details_not_ready">غير جاهز</string>
+    <string name="browser_details_show_technical">إظهار التفاصيل التقنية</string>
+    <string name="browser_details_hide_technical">إخفاء التفاصيل التقنية</string>
+    <string name="browser_details_diagnostics">التشخيص</string>
+    <string name="browser_details_recovery">استعادة الاتصال</string>
+    <string name="browser_details_recovery_hint">استخدم هذه الأزرار فقط إذا توقف CarPlay عن الاستجابة. تؤدي إعادة الاتصال إلى قطع الجلسة الحالية.</string>
+    <string name="browser_details_expansion">%1$s، %2$s</string>
+    <string name="browser_details_expanded">موسّع</string>
+    <string name="browser_details_collapsed">مطوي</string>
+    <string name="browser_details_address_idle">يتوفر عند بدء CarPlay</string>
+    <string name="browser_details_direct_address">العنوان المباشر</string>
+</resources>

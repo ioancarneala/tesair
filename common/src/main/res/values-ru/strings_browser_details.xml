@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_details_iphone">iPhone</string>
+    <string name="browser_details_browser">Изображение в браузере</string>
+    <string name="browser_details_background">Работа в фоне</string>
+    <string name="browser_details_tesla">Подключение к Tesla</string>
+    <string name="browser_details_connected">Подключён</string>
+    <string name="browser_details_waiting">Ожидание подключения</string>
+    <string name="browser_details_picture_ready">CarPlay работает</string>
+    <string name="browser_details_picture_waiting">Подготовка изображения…</string>
+    <string name="browser_details_allowed">Разрешено</string>
+    <string name="browser_details_permission_needed">Требуется разрешение</string>
+    <string name="browser_details_enabled">Включено</string>
+    <string name="browser_details_not_needed">Не требуется для этого подключения</string>
+    <string name="browser_details_other_vpn">Активна другая VPN</string>
+    <string name="browser_details_starting">Запуск…</string>
+    <string name="browser_details_not_ready">Не готово</string>
+    <string name="browser_details_show_technical">Показать технические сведения</string>
+    <string name="browser_details_hide_technical">Скрыть технические сведения</string>
+    <string name="browser_details_diagnostics">Диагностика</string>
+    <string name="browser_details_recovery">Восстановление подключения</string>
+    <string name="browser_details_recovery_hint">Используйте эти кнопки, только если CarPlay завис. Повторное подключение прерывает текущий сеанс.</string>
+    <string name="browser_details_expansion">%1$s, %2$s</string>
+    <string name="browser_details_expanded">Развёрнуто</string>
+    <string name="browser_details_collapsed">Свёрнуто</string>
+    <string name="browser_details_address_idle">Доступен после запуска CarPlay</string>
+    <string name="browser_details_direct_address">Прямой адрес</string>
+</resources>

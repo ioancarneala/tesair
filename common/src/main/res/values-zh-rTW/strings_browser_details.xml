@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_details_iphone">iPhone</string>
+    <string name="browser_details_browser">瀏覽器畫面</string>
+    <string name="browser_details_background">背景執行</string>
+    <string name="browser_details_tesla">Tesla 連線</string>
+    <string name="browser_details_connected">已連線</string>
+    <string name="browser_details_waiting">等待連線</string>
+    <string name="browser_details_picture_ready">CarPlay 正在播放</string>
+    <string name="browser_details_picture_waiting">正在準備畫面…</string>
+    <string name="browser_details_allowed">已允許</string>
+    <string name="browser_details_permission_needed">需要授權</string>
+    <string name="browser_details_enabled">已啟用</string>
+    <string name="browser_details_not_needed">此連線不需要</string>
+    <string name="browser_details_other_vpn">另一個 VPN 正在執行</string>
+    <string name="browser_details_starting">正在啟動…</string>
+    <string name="browser_details_not_ready">尚未就緒</string>
+    <string name="browser_details_show_technical">顯示技術詳細資訊</string>
+    <string name="browser_details_hide_technical">隱藏技術詳細資訊</string>
+    <string name="browser_details_diagnostics">診斷</string>
+    <string name="browser_details_recovery">恢復連線</string>
+    <string name="browser_details_recovery_hint">僅在 CarPlay 沒有回應時使用這些控制項。重新連線會中斷目前的工作階段。</string>
+    <string name="browser_details_expansion">%1$s，%2$s</string>
+    <string name="browser_details_expanded">已展開</string>
+    <string name="browser_details_collapsed">已收合</string>
+    <string name="browser_details_address_idle">啟動 CarPlay 後可用</string>
+    <string name="browser_details_direct_address">直接連線網址</string>
+</resources>

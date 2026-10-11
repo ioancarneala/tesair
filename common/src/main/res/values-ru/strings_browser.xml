@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_carplay_size_value">%1$d мм</string>
+    <string name="settings_browser_carplay_size_hint">Чем меньше значение, тем крупнее значки и текст CarPlay. Диапазон — от 100 до 400 мм с шагом 50 мм. Применение изменения переподключает CarPlay; разрешение видео остаётся прежним.</string>
+    <string name="settings_browser_display_summary">Оформление, размер CarPlay, разрешение и частота кадров в браузере</string>
+    <string name="settings_browser_video_profile">Прямое видео H.264 с низкой задержкой. Рекомендуется 30 кадров/с; для более плавного движения можно выбрать 60 кадров/с. Изменения частоты кадров и размера CarPlay применяются после переподключения.</string>
+    <string name="browser_address_title">Подключение браузера Tesla (экспериментально)</string>
+    <string name="browser_address_description">Использует локальный адрес VPN для доступа браузера Tesla к этому телефону. Видео передаётся через точку доступа. Включите один раз; подключение будет запускаться автоматически вместе с TesAir.</string>
+    <string name="browser_address_enable">Включить подключение Tesla</string>
+    <string name="browser_address_disable">Отключить</string>
+    <string name="browser_address_active">✓ Локальный адрес готов</string>
+    <string name="browser_address_starting">Подготовка локального подключения…</string>
+    <string name="browser_address_other_vpn">Активна другая VPN. Отключите её перед включением подключения Tesla.</string>
+    <string name="browser_address_error">Не удалось запустить локальное подключение. Отключите его и повторите попытку.</string>
+    <string name="browser_address_permission">Требуется разрешение на локальное подключение. Включите его снова, чтобы продолжить.</string>
+    <string name="browser_address_off">Локальное подключение отключено</string>
+    <string name="browser_address_wireless_only">Доступно с беспроводным CarPlay. CarPlay через USB использует собственную VPN.</string>
+    <string name="browser_address_notification_channel">Адрес браузера Tesla</string>
+    <string name="browser_address_notification_title">Адрес браузера Tesla включён</string>
+    <string name="browser_address_notification_text">Только локальный доступ · остальной интернет-трафик не меняется</string>
+    <string name="browser_battery_ready">✓ Фоновое подключение разрешено</string>
+    <string name="browser_battery_required">Оптимизация батареи может приостанавливать подключение, когда телефон переходит в спящий режим.</string>
+    <string name="browser_battery_allow">Разрешить фоновое подключение</string>
+    <string name="browser_battery_unavailable">Откройте настройки батареи Android и разрешите TesAir работать в фоновом режиме без ограничений.</string>
+    <string name="settings_browser_resolution_hint" formatted="false">От 30 до 160 процентов текущего видеопрофиля браузера; 100 сохраняет качество по умолчанию. Более высокие значения увеличивают нагрузку на декодирование. Максимум — 3840 × 2160, поэтому значение 160 может быть ограничено. Применяется при следующем подключении. Изображение по-прежнему заполняет окно браузера и плавно подстраивается под его размер.</string>
+    <string name="settings_browser_resolution_preview">Видеополе при следующем подключении: %1$d × %2$d пикселей (по последнему размеру окна браузера)</string>
+    <string name="settings_browser_audio_destination">Вывод звука (экспериментально)</string>
+    <string name="settings_browser_audio_oneplus">Через OnePlus</string>
+    <string name="settings_browser_audio_iphone">Напрямую по Bluetooth с iPhone</string>
+    <string name="settings_browser_audio_destination_hint">Пробный режим. Для прямого звука по Bluetooth выполните сопряжение iPhone с Bluetooth Tesla для музыки и звонков. Изменения применяются при следующем подключении.</string>
+</resources>

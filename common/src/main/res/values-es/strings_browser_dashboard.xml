@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_dashboard_brand">TesAir</string>
+    <string name="browser_dashboard_ready">CarPlay está listo</string>
+    <string name="browser_dashboard_ready_hint">El navegador está mostrando CarPlay. Puedes apagar la pantalla de este teléfono.</string>
+    <string name="browser_dashboard_open_browser">Conecta el navegador</string>
+    <string name="browser_dashboard_open_browser_hint">Tu iPhone está conectado. Abre la dirección de abajo en la otra pantalla.</string>
+    <string name="browser_dashboard_connecting">Conectando con tu iPhone</string>
+    <string name="browser_dashboard_connecting_hint">Mantén el iPhone cerca con Wi-Fi y Bluetooth activados. La conexión se recuperará automáticamente.</string>
+    <string name="browser_dashboard_waiting">Listo para conectar</string>
+    <string name="browser_dashboard_connection">Conexión</string>
+    <string name="browser_dashboard_iphone_connected">iPhone conectado</string>
+    <string name="browser_dashboard_iphone_waiting">Esperando al iPhone</string>
+    <string name="browser_dashboard_video_ready">El navegador ha recibido CarPlay</string>
+    <string name="browser_dashboard_video_waiting">Navegador conectado · esperando vídeo</string>
+    <string name="browser_dashboard_browser_waiting">Esperando al navegador</string>
+    <string name="browser_dashboard_background_ready">Permisos de segundo plano de Android verificados</string>
+    <string name="browser_dashboard_background_needed">Permite el uso en segundo plano para una conexión fiable</string>
+    <string name="browser_dashboard_route_ready">Conexión con Tesla lista</string>
+    <string name="browser_dashboard_network_title">1. Conéctate a esta red</string>
+    <string name="browser_dashboard_network_instruction">Conecta tu iPhone y tu Tesla o dispositivo con navegador a esta red Wi-Fi.</string>
+    <string name="browser_dashboard_network_missing">Configura la red en Ajustes de conexión</string>
+    <string name="browser_dashboard_password">Contraseña: %1$s</string>
+    <string name="browser_dashboard_show_password">Mostrar contraseña</string>
+    <string name="browser_dashboard_hide_password">Ocultar contraseña</string>
+    <string name="browser_dashboard_browser_title">2. Abre el navegador</string>
+    <string name="browser_dashboard_browser_instruction">Abre esta dirección. Cuando aparezca CarPlay, guarda la página en favoritos.</string>
+    <string name="browser_dashboard_address_missing">La dirección segura necesita configuración</string>
+    <string name="browser_dashboard_server_starting">Preparando la dirección del navegador…</string>
+    <string name="browser_dashboard_address_help">Conecta este teléfono a internet para preparar su dirección segura del navegador. Después, inténtalo de nuevo.</string>
+    <string name="browser_dashboard_show_details">Detalles de conexión</string>
+    <string name="browser_dashboard_hide_details">Ocultar detalles</string>
+    <string name="browser_dashboard_disable_route">Desactivar conexión con Tesla</string>
+    <string name="browser_dashboard_checked">✓ %1$s</string>
+    <string name="browser_dashboard_pending">○ %1$s</string>
+    <string name="browser_dashboard_viewport">Tamaño del navegador: %1$d × %2$d</string>
+    <string name="browser_dashboard_setup_attention">Revisa la configuración de conexión</string>
+    <string name="browser_dashboard_setup_attention_hint">Los reintentos automáticos están en pausa. Revisa los datos guardados del punto de acceso y la conexión del iPhone, y vuelve a intentarlo.</string>
+    <string name="browser_dashboard_review_setup">Revisar configuración de conexión</string>
+    <string name="browser_https_preparing">Preparando tu dirección segura…</string>
+    <string name="browser_https_retry">Esperando conexión a internet para terminar la configuración</string>
+    <string name="browser_https_unavailable">La configuración de la dirección segura necesita atención</string>
+</resources>

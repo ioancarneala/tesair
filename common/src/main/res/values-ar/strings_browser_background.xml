@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_background_required">اسمح بالعمل في الخلفية للحفاظ على اتصال CarPlay أثناء قفل الهاتف.</string>
+    <string name="browser_background_restricted">يقيّد Android العمل في الخلفية. اسمح به في إعدادات التطبيق.</string>
+</resources>

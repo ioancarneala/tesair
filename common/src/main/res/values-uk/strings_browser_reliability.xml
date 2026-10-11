@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">Запуск після перезапуску телефона</string>
+    <string name="browser_boot_hint">Запускати сервер CarPlay у фоновому режимі після першого розблокування після перезапуску.</string>
+    <string name="browser_diagnostics_hint">Історія підключень автоматично зберігається на цьому телефоні. Після збою збережіть звіт до перевстановлення або очищення даних застосунку.</string>
+</resources>

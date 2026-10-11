@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_carplay_size_value">%1$d 毫米</string>
+    <string name="settings_browser_carplay_size_hint">数值越小，CarPlay 图标和文字越大。可在 100 到 400 毫米之间调整，每次增减 50 毫米。应用更改会重新连接 CarPlay，视频分辨率保持不变。</string>
+    <string name="settings_browser_display_summary">外观、CarPlay 大小、分辨率和浏览器帧率</string>
+    <string name="settings_browser_video_profile">直接传输 H.264 视频，低延迟播放。建议使用 30 fps；也可选择 60 fps 获得更流畅的画面。帧率和 CarPlay 大小的更改将在重新连接后生效。</string>
+    <string name="browser_address_title">Tesla 浏览器连接（实验性）</string>
+    <string name="browser_address_description">使用本地 VPN 地址，让 Tesla 浏览器能够访问此手机。视频仅通过热点传输。启用一次后，会随 TesAir 自动启动。</string>
+    <string name="browser_address_enable">启用 Tesla 连接</string>
+    <string name="browser_address_disable">停用</string>
+    <string name="browser_address_active">✓ 本地地址已就绪</string>
+    <string name="browser_address_starting">正在准备本地连接…</string>
+    <string name="browser_address_other_vpn">另一个 VPN 正在运行。请先断开它，再启用 Tesla 连接。</string>
+    <string name="browser_address_error">无法启动本地连接。请停用后重试。</string>
+    <string name="browser_address_permission">需要本地连接权限。请重新启用以继续。</string>
+    <string name="browser_address_off">本地连接已关闭</string>
+    <string name="browser_address_wireless_only">适用于无线 CarPlay。USB CarPlay 使用自身的 VPN。</string>
+    <string name="browser_address_notification_channel">Tesla 浏览器地址</string>
+    <string name="browser_address_notification_title">Tesla 浏览器地址已启用</string>
+    <string name="browser_address_notification_text">仅限本地访问 · 其他互联网流量保持不变</string>
+    <string name="browser_battery_ready">✓ 已允许后台连接</string>
+    <string name="browser_battery_required">电池优化可能会在手机休眠时暂停连接。</string>
+    <string name="browser_battery_allow">允许后台连接</string>
+    <string name="browser_battery_unavailable">请打开 Android 电池设置，并允许 TesAir 在后台不受限制地运行。</string>
+    <string name="settings_browser_resolution_hint" formatted="false">设置为当前浏览器视频配置的 30%–160%；100% 保持默认画质。数值越高，解码负载越大。最高为 3840 × 2160，因此选择 160% 时可能受限。下次连接时生效。画面仍会填满浏览器窗口，并随窗口大小平滑调整。</string>
+    <string name="settings_browser_resolution_preview">下次连接的视频画布：%1$d × %2$d 像素（根据上次浏览器窗口大小）</string>
+    <string name="settings_browser_audio_destination">音频输出位置（实验性）</string>
+    <string name="settings_browser_audio_oneplus">通过 OnePlus</string>
+    <string name="settings_browser_audio_iphone">iPhone 蓝牙直连</string>
+    <string name="settings_browser_audio_destination_hint">试用模式。使用 iPhone 蓝牙直连时，请将 iPhone 与 Tesla 蓝牙配对，以播放音乐和接打电话。更改将在下次连接时生效。</string>
+</resources>

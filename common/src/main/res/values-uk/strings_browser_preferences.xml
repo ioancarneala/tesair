@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_preferences_picture">Зображення</string>
+    <string name="settings_browser_preferences_help">Допомога</string>
+    <string name="settings_browser_preferences_connection_summary">iPhone, точка доступу й автозапуск</string>
+    <string name="settings_browser_preferences_picture_summary">Розмір, чіткість і вигляд</string>
+    <string name="settings_browser_preferences_help_summary">Інструкція та звіти про підключення</string>
+    <string name="settings_browser_preferences_not_set">Не налаштовано</string>
+    <string name="settings_browser_preferences_review_setup">Перевірити підключення</string>
+    <string name="settings_browser_preferences_auto_open">Підключати під час відкриття</string>
+    <string name="settings_browser_preferences_auto_open_hint">Запускати приймач під час відкриття застосунку.</string>
+    <string name="settings_browser_preferences_after_restart">Відновлювати після перезапуску</string>
+    <string name="settings_browser_preferences_after_restart_hint">Відновлювати останній активний сеанс після перезапуску телефона. Android може вимагати розблокування.</string>
+    <string name="settings_browser_preferences_driving_hint">Наблизити елементи CarPlay до водія праворуч. Після перепідключення.</string>
+    <string name="settings_browser_preferences_appearance">Вигляд</string>
+    <string name="settings_browser_preferences_clock_hint">Використовує місцевий час цього телефона.</string>
+    <string name="settings_browser_preferences_help_hint">Повторіть кроки підключення, зберігши поточні налаштування.</string>
+    <string name="settings_browser_preferences_setup_guide">Відкрити інструкцію</string>
+    <string name="settings_browser_preferences_report_hint">Звіти автоматично зберігаються на цьому телефоні. Експортуйте їх лише для отримання допомоги.</string>
+    <string name="settings_browser_preferences_version">Версія %1$s</string>
+    <string name="settings_browser_preferences_independent">TesAir — незалежний проєкт, не пов’язаний з Apple, Tesla чи Google та не схвалений ними.</string>
+    <string name="settings_browser_preferences_interface_size">Розмір інтерфейсу</string>
+    <string name="settings_browser_preferences_quality">Якість відео</string>
+    <string name="settings_browser_preferences_smoothness">Плавність</string>
+    <string name="settings_browser_preferences_compact">Компактний</string>
+    <string name="settings_browser_preferences_comfortable">Зручний</string>
+    <string name="settings_browser_preferences_large">Великий</string>
+    <string name="settings_browser_preferences_extra_large">Дуже великий</string>
+    <string name="settings_browser_preferences_balanced">Збалансована</string>
+    <string name="settings_browser_preferences_sharper">Чіткіша</string>
+    <string name="settings_browser_preferences_sharpest">Максимальна чіткість</string>
+    <string name="settings_browser_preferences_smoother">Плавніша</string>
+    <string name="settings_browser_preferences_custom_size">Власний розмір</string>
+    <string name="settings_browser_preferences_custom_quality">Власна якість</string>
+    <string name="settings_browser_preferences_custom_motion">Власна плавність</string>
+    <string name="settings_browser_preferences_keep_size">Зберегти поточний розмір</string>
+    <string name="settings_browser_preferences_keep_quality">Зберегти поточну якість</string>
+    <string name="settings_browser_preferences_keep_motion">Зберегти поточну плавність</string>
+    <string name="settings_browser_preferences_size_hint">Збільште значки й текст без зміни якості зображення. Застосування перепідключає CarPlay.</string>
+    <string name="settings_browser_preferences_video_hint">Чіткіше та плавніше відео потребує більше ресурсів. Після перепідключення.</string>
+    <string name="settings_browser_preferences_credits">Приймач створено на основі xcertplay (GPL-3.0). Інтерфейс адаптовано з DiPlay та DiAuto (AGPL-3.0).\n\nВикористовуються AndroidX, Bouncy Castle, JmDNS, SLF4J та інші бібліотеки з відкритим кодом. Проєкт містить вихідний код і повідомлення про ліцензії.\n\nApple, iPhone та CarPlay — торговельні марки Apple Inc. Tesla — торговельна марка Tesla, Inc. Android — торговельна марка Google LLC.\n\nІлюстрації до інструкцій згенеровано для TesAir на основі зразків, наданих користувачем.</string>
+</resources>

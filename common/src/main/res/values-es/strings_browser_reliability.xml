@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_boot_title">Iniciar al reiniciar el teléfono</string>
+    <string name="browser_boot_hint">Inicia el servidor CarPlay en segundo plano tras el primer desbloqueo después de reiniciar.</string>
+    <string name="browser_diagnostics_hint">El historial de conexión se guarda automáticamente en este teléfono. Tras una interrupción, guarda un informe antes de reinstalar o borrar los datos.</string>
+</resources>

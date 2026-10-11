@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_background_required">Allow background use to keep CarPlay connected while locked.</string>
+    <string name="browser_background_restricted">Android is restricting background use. Allow it in app settings.</string>
+</resources>

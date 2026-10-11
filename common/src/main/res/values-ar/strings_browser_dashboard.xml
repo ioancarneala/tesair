@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_dashboard_brand">TesAir</string>
+    <string name="browser_dashboard_ready">CarPlay جاهز</string>
+    <string name="browser_dashboard_ready_hint">يعرض المتصفح CarPlay. يمكنك إطفاء شاشة هذا الهاتف.</string>
+    <string name="browser_dashboard_open_browser">وصّل المتصفح</string>
+    <string name="browser_dashboard_open_browser_hint">تم توصيل iPhone. افتح العنوان أدناه على الشاشة الأخرى.</string>
+    <string name="browser_dashboard_connecting">جارٍ الاتصال بـ iPhone</string>
+    <string name="browser_dashboard_connecting_hint">أبقِ iPhone قريبًا مع تشغيل Wi-Fi وBluetooth. سيُستعاد الاتصال تلقائيًا.</string>
+    <string name="browser_dashboard_waiting">جاهز للاتصال</string>
+    <string name="browser_dashboard_connection">الاتصال</string>
+    <string name="browser_dashboard_iphone_connected">iPhone متصل</string>
+    <string name="browser_dashboard_iphone_waiting">في انتظار iPhone</string>
+    <string name="browser_dashboard_video_ready">استلم المتصفح CarPlay</string>
+    <string name="browser_dashboard_video_waiting">المتصفح متصل · في انتظار الفيديو</string>
+    <string name="browser_dashboard_browser_waiting">في انتظار المتصفح</string>
+    <string name="browser_dashboard_background_ready">تم التحقق من أذونات الخلفية في Android</string>
+    <string name="browser_dashboard_background_needed">اسمح بالعمل في الخلفية لاتصال موثوق</string>
+    <string name="browser_dashboard_route_ready">اتصال Tesla جاهز</string>
+    <string name="browser_dashboard_network_title">١. انضم إلى هذه الشبكة</string>
+    <string name="browser_dashboard_network_instruction">وصّل iPhone وTesla أو الجهاز الذي يحتوي على المتصفح بشبكة Wi-Fi هذه.</string>
+    <string name="browser_dashboard_network_missing">اضبط الشبكة في إعدادات الاتصال</string>
+    <string name="browser_dashboard_password">كلمة المرور: %1$s</string>
+    <string name="browser_dashboard_show_password">إظهار كلمة المرور</string>
+    <string name="browser_dashboard_hide_password">إخفاء كلمة المرور</string>
+    <string name="browser_dashboard_browser_title">٢. افتح في المتصفح</string>
+    <string name="browser_dashboard_browser_instruction">افتح هذا العنوان. عندما يظهر CarPlay، احفظ الصفحة في الإشارات المرجعية.</string>
+    <string name="browser_dashboard_address_missing">العنوان الآمن يحتاج إلى إعداد</string>
+    <string name="browser_dashboard_server_starting">جارٍ تجهيز عنوان المتصفح…</string>
+    <string name="browser_dashboard_address_help">وصّل هذا الهاتف بالإنترنت لتجهيز عنوان المتصفح الآمن، ثم حاول مجددًا.</string>
+    <string name="browser_dashboard_show_details">تفاصيل الاتصال</string>
+    <string name="browser_dashboard_hide_details">إخفاء التفاصيل</string>
+    <string name="browser_dashboard_disable_route">تعطيل اتصال Tesla</string>
+    <string name="browser_dashboard_checked">✓ %1$s</string>
+    <string name="browser_dashboard_pending">○ %1$s</string>
+    <string name="browser_dashboard_viewport">حجم المتصفح: %1$d × %2$d</string>
+    <string name="browser_dashboard_setup_attention">تحقّق من إعداد الاتصال</string>
+    <string name="browser_dashboard_setup_attention_hint">تم إيقاف المحاولات التلقائية مؤقتًا. راجع بيانات نقطة الاتصال المحفوظة واتصال iPhone، ثم حاول مرة أخرى.</string>
+    <string name="browser_dashboard_review_setup">مراجعة إعداد الاتصال</string>
+    <string name="browser_https_preparing">جارٍ تجهيز عنوانك الآمن…</string>
+    <string name="browser_https_retry">في انتظار الإنترنت لإكمال الإعداد</string>
+    <string name="browser_https_unavailable">إعداد العنوان الآمن يحتاج إلى انتباهك</string>
+</resources>

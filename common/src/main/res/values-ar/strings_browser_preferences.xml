@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_preferences_picture">الصورة</string>
+    <string name="settings_browser_preferences_help">المساعدة</string>
+    <string name="settings_browser_preferences_connection_summary">iPhone ونقطة الاتصال والتشغيل التلقائي</string>
+    <string name="settings_browser_preferences_picture_summary">الحجم والوضوح والمظهر</string>
+    <string name="settings_browser_preferences_help_summary">دليل الإعداد وتقارير الاتصال</string>
+    <string name="settings_browser_preferences_not_set">غير مضبوط</string>
+    <string name="settings_browser_preferences_review_setup">مراجعة إعداد الاتصال</string>
+    <string name="settings_browser_preferences_auto_open">الاتصال عند الفتح</string>
+    <string name="settings_browser_preferences_auto_open_hint">تشغيل المستقبل عند فتح هذا التطبيق.</string>
+    <string name="settings_browser_preferences_after_restart">الاستئناف بعد إعادة التشغيل</string>
+    <string name="settings_browser_preferences_after_restart_hint">استئناف آخر جلسة نشطة بعد إعادة تشغيل الهاتف. قد يطلب Android فتح القفل.</string>
+    <string name="settings_browser_preferences_driving_hint">تقريب عناصر CarPlay من السائق على اليمين. يُطبّق بعد إعادة الاتصال.</string>
+    <string name="settings_browser_preferences_appearance">المظهر</string>
+    <string name="settings_browser_preferences_clock_hint">يستخدم التوقيت المحلي لهذا الهاتف.</string>
+    <string name="settings_browser_preferences_help_hint">اتبع خطوات الاتصال مجددًا دون مسح الإعدادات المحفوظة.</string>
+    <string name="settings_browser_preferences_setup_guide">فتح دليل الإعداد</string>
+    <string name="settings_browser_preferences_report_hint">تُحفظ تقارير الاتصال تلقائيًا على هذا الهاتف. صدّر تقريرًا فقط عندما تحتاج إلى المساعدة.</string>
+    <string name="settings_browser_preferences_version">الإصدار %1$s</string>
+    <string name="settings_browser_preferences_independent">TesAir تطبيق مستقل، غير تابع لشركات Apple أو Tesla أو Google ولا يحظى بتأييدها.</string>
+    <string name="settings_browser_preferences_interface_size">حجم الواجهة</string>
+    <string name="settings_browser_preferences_quality">جودة الفيديو</string>
+    <string name="settings_browser_preferences_smoothness">السلاسة</string>
+    <string name="settings_browser_preferences_compact">مدمج</string>
+    <string name="settings_browser_preferences_comfortable">مريح</string>
+    <string name="settings_browser_preferences_large">كبير</string>
+    <string name="settings_browser_preferences_extra_large">كبير جدًا</string>
+    <string name="settings_browser_preferences_balanced">متوازنة</string>
+    <string name="settings_browser_preferences_sharper">أوضح</string>
+    <string name="settings_browser_preferences_sharpest">أعلى وضوح</string>
+    <string name="settings_browser_preferences_smoother">أكثر سلاسة</string>
+    <string name="settings_browser_preferences_custom_size">حجم مخصص</string>
+    <string name="settings_browser_preferences_custom_quality">جودة مخصصة</string>
+    <string name="settings_browser_preferences_custom_motion">سلاسة مخصصة</string>
+    <string name="settings_browser_preferences_keep_size">الاحتفاظ بالحجم الحالي</string>
+    <string name="settings_browser_preferences_keep_quality">الاحتفاظ بالجودة الحالية</string>
+    <string name="settings_browser_preferences_keep_motion">الاحتفاظ بالسلاسة الحالية</string>
+    <string name="settings_browser_preferences_size_hint">اختر أيقونات ونصًا أكبر دون تغيير جودة الصورة. تطبيق التغيير يعيد اتصال CarPlay.</string>
+    <string name="settings_browser_preferences_video_hint">الفيديو الأوضح والحركة الأكثر سلاسة يحتاجان إلى معالجة أكبر. يُطبّق بعد إعادة الاتصال.</string>
+    <string name="settings_browser_preferences_credits">المستقبل مبني على xcertplay ‏(GPL-3.0). الواجهة مقتبسة من DiPlay وDiAuto ‏(AGPL-3.0).\n\nيستخدم AndroidX وBouncy Castle وJmDNS وSLF4J ومكتبات أخرى مفتوحة المصدر. يتضمن المشروع الشفرة المصدر وإشعارات الترخيص.\n\nApple وiPhone وCarPlay علامات تجارية لشركة Apple Inc. وTesla علامة تجارية لشركة Tesla, Inc. وAndroid علامة تجارية لشركة Google LLC.\n\nوُلّدت الرسوم التوضيحية التعليمية لتطبيق TesAir باستخدام مراجع قدّمها المستخدم.</string>
+</resources>

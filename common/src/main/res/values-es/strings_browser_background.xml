@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_background_required">Permite el uso en segundo plano para mantener CarPlay conectado con el teléfono bloqueado.</string>
+    <string name="browser_background_restricted">Android restringe el uso en segundo plano. Permítelo en los ajustes de la app.</string>
+</resources>

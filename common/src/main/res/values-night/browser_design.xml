@@ -1,0 +1,34 @@
+<resources>
+    <color name="browser_paper">#101922</color>
+    <color name="browser_ink">#F0F5F6</color>
+    <color name="browser_muted">#A7BAC3</color>
+    <color name="browser_line">#30444F</color>
+    <color name="browser_field">#1A2A34</color>
+    <color name="browser_accent">#ADDCE5</color>
+    <color name="browser_on_accent">#122D36</color>
+    <color name="browser_wash">#20343D</color>
+    <color name="browser_error">#FFB6AD</color>
+    <color name="browser_success">#9CDDBA</color>
+    <style name="Theme.Browser.Onboarding" parent="android:Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/browser_accent</item>
+        <item name="android:windowBackground">@color/browser_paper</item>
+        <item name="android:colorBackground">@color/browser_paper</item>
+        <item name="android:textColorPrimary">@color/browser_ink</item>
+        <item name="android:textColorSecondary">@color/browser_muted</item>
+        <item name="android:statusBarColor">@color/browser_paper</item>
+        <item name="android:navigationBarColor">@color/browser_paper</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+        <item name="android:alertDialogTheme">@style/Theme.Browser.Onboarding.Dialog</item>
+    </style>
+    <style name="Theme.Browser.Onboarding.Dialog" parent="android:Theme.Material.Dialog.Alert">
+        <item name="android:windowBackground">@drawable/browser_setup_dialog_background</item>
+        <item name="android:colorBackground">@color/browser_paper</item>
+        <item name="android:textColorPrimary">@color/browser_ink</item>
+        <item name="android:textColorSecondary">@color/browser_muted</item>
+        <item name="android:colorAccent">@color/browser_accent</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:buttonBarButtonStyle">@style/Browser.DialogButton</item>
+    </style>
+</resources>

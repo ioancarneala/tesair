@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="settings_browser_carplay_size_value">%1$d mm</string>
+    <string name="settings_browser_carplay_size_hint">Los valores más bajos aumentan el tamaño de los iconos y el texto de CarPlay. Ajusta entre 100 y 400 mm en pasos de 50 mm. Al aplicar un cambio, CarPlay se vuelve a conectar; la resolución de vídeo no cambia.</string>
+    <string name="settings_browser_display_summary">Apariencia, tamaño de CarPlay, resolución y tasa de fotogramas del navegador</string>
+    <string name="settings_browser_video_profile">Vídeo H.264 directo y reproducción de baja latencia. Se recomiendan 30 fps; puedes elegir 60 fps para un movimiento más fluido. Los cambios de tasa de fotogramas y tamaño de CarPlay se aplican al volver a conectar.</string>
+    <string name="browser_address_title">Conexión del navegador Tesla (experimental)</string>
+    <string name="browser_address_description">Usa una dirección VPN local para que el navegador Tesla pueda acceder a este teléfono. El vídeo permanece en la red del punto de acceso. Actívala una vez; se iniciará automáticamente con TesAir.</string>
+    <string name="browser_address_enable">Activar conexión Tesla</string>
+    <string name="browser_address_disable">Desactivar</string>
+    <string name="browser_address_active">✓ Dirección local lista</string>
+    <string name="browser_address_starting">Preparando conexión local…</string>
+    <string name="browser_address_other_vpn">Hay otra VPN activa. Desconéctala antes de activar la conexión Tesla.</string>
+    <string name="browser_address_error">No se pudo iniciar la conexión local. Desactívala e inténtalo de nuevo.</string>
+    <string name="browser_address_permission">Se necesita permiso para la conexión local. Actívala de nuevo para continuar.</string>
+    <string name="browser_address_off">La conexión local está desactivada</string>
+    <string name="browser_address_wireless_only">Disponible con CarPlay inalámbrico. CarPlay por USB utiliza su propia VPN.</string>
+    <string name="browser_address_notification_channel">Dirección del navegador Tesla</string>
+    <string name="browser_address_notification_title">Dirección del navegador Tesla activada</string>
+    <string name="browser_address_notification_text">Solo acceso local · el resto del tráfico de internet no cambia</string>
+    <string name="browser_battery_ready">✓ Conexión en segundo plano permitida</string>
+    <string name="browser_battery_required">La optimización de batería puede pausar la conexión cuando el teléfono entra en reposo.</string>
+    <string name="browser_battery_allow">Permitir conexión en segundo plano</string>
+    <string name="browser_battery_unavailable">Abre los ajustes de batería de Android y permite el uso sin restricciones en segundo plano para TesAir.</string>
+    <string name="settings_browser_resolution_hint" formatted="false">Del 30 al 160 por ciento del perfil de vídeo actual del navegador; 100 mantiene la calidad predeterminada. Los valores más altos aumentan la carga de decodificación. El resultado se limita a 3840 × 2160, por lo que 160 puede quedar limitado. Se aplica en la próxima conexión. El navegador sigue llenando la ventana y adaptándose a su tamaño sin interrupciones.</string>
+    <string name="settings_browser_resolution_preview">Lienzo de vídeo en la próxima conexión: %1$d × %2$d píxeles (según la última ventana del navegador)</string>
+    <string name="settings_browser_audio_destination">Destino del audio (experimental)</string>
+    <string name="settings_browser_audio_oneplus">A través de OnePlus</string>
+    <string name="settings_browser_audio_iphone">Bluetooth directo del iPhone</string>
+    <string name="settings_browser_audio_destination_hint">Modo de prueba. Para Bluetooth directo del iPhone, enlaza tu iPhone con el Bluetooth del Tesla para música y llamadas. Los cambios se aplican en la próxima conexión.</string>
+</resources>

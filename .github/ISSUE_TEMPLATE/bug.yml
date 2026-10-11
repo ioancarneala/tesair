@@ -1,0 +1,50 @@
+name: Bug report
+description: A reproducible problem in TesAir.
+title: "[Bug] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Keep this report focused on one problem. Never attach authentication assets,
+        certificates, keys, tokens, raw diagnostic archives, or unredacted logs/photos.
+        Remove hotspot details, device identifiers, locations and personal content.
+        For security vulnerabilities, follow SECURITY.md instead of opening an issue.
+  - type: checkboxes
+    id: preparation
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked the README and existing issues.
+          required: true
+        - label: This report contains no credentials or personal data.
+          required: true
+  - type: input
+    id: revision
+    attributes:
+      label: TesAir version or source commit
+      placeholder: Version shown in the app, or Git commit used to build it
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Devices and software
+      description: Android model/OS, iPhone model/iOS, browser/version, and Tesla model/software if relevant. No serial numbers or account details.
+      placeholder: |
+        Android:
+        iPhone:
+        Browser / Tesla:
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include what you expected, what happened, and how often it happens.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Minimal diagnostic details
+      description: Optional short, manually reviewed error text. Do not upload raw device reports or credentials.

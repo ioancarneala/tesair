@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+
+    <!-- This product forwards video to a browser; audio stays on the iPhone. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" tools:node="remove" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:node="remove" />
+    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" tools:node="remove" />
+    <uses-permission android:name="android.permission.PACKAGE_USAGE_STATS" tools:node="remove"
+        tools:ignore="ProtectedPermissions" />
+    <!-- Location permissions are retained for Wi-Fi/hotspot discovery on older Android versions. -->
+    <queries>
+        <package android:name="com.byd.carsettings" tools:node="remove" />
+        <package android:name="com.byd.appmgr" tools:node="remove" />
+        <package android:name="com.byd.deviceinfo" tools:node="remove" />
+        <package android:name="com.byd.service" tools:node="remove" />
+        <package android:name="com.byd.clusterdebug" tools:node="remove" />
+        <package android:name="com.ts.car.someip.service" tools:node="remove" />
+        <package android:name="com.byd.amapservice" tools:node="remove" />
+        <package android:name="com.byd.automap" tools:node="remove" />
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:fullBackupContent="@xml/backup_rules"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        android:icon="@mipmap/ic_tesair_launcher"
+        android:label="@string/browser_product_name"
+        android:localeConfig="@xml/locales_config"
+        android:roundIcon="@mipmap/ic_tesair_launcher"
+        android:supportsRtl="true"
+        android:resizeableActivity="true"
+        android:theme="@style/Theme.Xcertplay">
+
+        <meta-data android:name="com.shilapi.xcertplay.BROWSER_PRODUCT" android:value="true" />
+
+        <meta-data
+            android:name="android.allow_multiple_resumed_activities"
+            android:value="true" />
+
+        <receiver
+            android:name="com.shilapi.xcertplay.BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            tools:replace="android:enabled">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <activity android:name="com.shilapi.xcertplay.DiPlayActivity"
+            android:theme="@style/Theme.Browser.Onboarding" tools:replace="android:theme" />
+        <service android:name="com.shilapi.xcertplay.DiPlaySessionService"
+            android:foregroundServiceType="connectedDevice" tools:replace="android:foregroundServiceType" />
+        <activity android:name="com.shilapi.xcertplay.BrowserDashboardActivity"
+            android:exported="false" android:launchMode="singleTask"
+            android:resizeableActivity="true"
+            android:theme="@style/Theme.Browser.Onboarding" />
+        <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity" android:exported="true">
+            <intent-filter tools:node="removeAll" />
+            <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" tools:node="remove" />
+        </activity>
+        <activity android:name="com.shilapi.xcertplay.AdbClusterActivity" tools:node="remove" />
+        <activity android:name="com.shilapi.xcertplay.CarPlayVideoActivity" tools:node="remove" />
+        <activity android:name="com.shilapi.xcertplay.MainActivity" tools:node="remove" />
+        <activity android:name="com.shilapi.xcertplay.ImageCropActivity" tools:node="remove" />
+        <receiver android:name="com.shilapi.xcertplay.NavigationWidget" tools:node="remove" />
+        <service android:name="com.shilapi.xcertplay.MapEmbedService" tools:node="remove" />
+        <service android:name="com.shilapi.xcertplay.WheelKeyService" tools:node="remove" />
+        <service android:name="com.shilapi.xcertplay.UsbAutoConfirmService" tools:node="remove" />
+
+        <service android:name="com.shilapi.xcertplay.shared.MyCarAppService" tools:node="remove" />
+        <meta-data android:name="androidx.car.app.minCarApiLevel" tools:node="remove" />
+    </application>
+
+</manifest>

@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_dashboard_brand">TesAir</string>
+    <string name="browser_dashboard_ready">CarPlay готовий</string>
+    <string name="browser_dashboard_ready_hint">Браузер показує CarPlay. Екран цього телефона можна вимкнути.</string>
+    <string name="browser_dashboard_open_browser">Підключіть браузер</string>
+    <string name="browser_dashboard_open_browser_hint">iPhone підключено. Відкрийте вказану нижче адресу на іншому екрані.</string>
+    <string name="browser_dashboard_connecting">Підключення до iPhone</string>
+    <string name="browser_dashboard_connecting_hint">Тримайте iPhone поруч з увімкненими Wi-Fi і Bluetooth. З’єднання відновиться автоматично.</string>
+    <string name="browser_dashboard_waiting">Готово до підключення</string>
+    <string name="browser_dashboard_connection">Підключення</string>
+    <string name="browser_dashboard_iphone_connected">iPhone підключено</string>
+    <string name="browser_dashboard_iphone_waiting">Очікування iPhone</string>
+    <string name="browser_dashboard_video_ready">Браузер отримав CarPlay</string>
+    <string name="browser_dashboard_video_waiting">Браузер підключено · очікування відео</string>
+    <string name="browser_dashboard_browser_waiting">Очікування браузера</string>
+    <string name="browser_dashboard_background_ready">Фонові дозволи Android перевірено</string>
+    <string name="browser_dashboard_background_needed">Дозвольте роботу у фоні для надійного підключення</string>
+    <string name="browser_dashboard_route_ready">Підключення Tesla готове</string>
+    <string name="browser_dashboard_network_title">1. Підключіться до цієї мережі</string>
+    <string name="browser_dashboard_network_instruction">Підключіть iPhone і Tesla або пристрій із браузером до цієї мережі Wi-Fi.</string>
+    <string name="browser_dashboard_network_missing">Вкажіть мережу в налаштуваннях підключення</string>
+    <string name="browser_dashboard_password">Пароль: %1$s</string>
+    <string name="browser_dashboard_show_password">Показати пароль</string>
+    <string name="browser_dashboard_hide_password">Приховати пароль</string>
+    <string name="browser_dashboard_browser_title">2. Відкрийте в браузері</string>
+    <string name="browser_dashboard_browser_instruction">Відкрийте цю адресу. Коли з’явиться CarPlay, додайте сторінку до закладок.</string>
+    <string name="browser_dashboard_address_missing">Захищена адреса потребує налаштування</string>
+    <string name="browser_dashboard_server_starting">Підготовка адреси для браузера…</string>
+    <string name="browser_dashboard_address_help">Підключіть цей телефон до інтернету, щоб підготувати захищену адресу для браузера. Потім спробуйте ще раз.</string>
+    <string name="browser_dashboard_show_details">Відомості про підключення</string>
+    <string name="browser_dashboard_hide_details">Приховати відомості</string>
+    <string name="browser_dashboard_disable_route">Вимкнути підключення Tesla</string>
+    <string name="browser_dashboard_checked">✓ %1$s</string>
+    <string name="browser_dashboard_pending">○ %1$s</string>
+    <string name="browser_dashboard_viewport">Розмір браузера: %1$d × %2$d</string>
+    <string name="browser_dashboard_setup_attention">Перевірте налаштування підключення</string>
+    <string name="browser_dashboard_setup_attention_hint">Автоматичні спроби призупинено. Перевірте збережені дані точки доступу й підключення iPhone, а потім спробуйте ще раз.</string>
+    <string name="browser_dashboard_review_setup">Перевірити налаштування підключення</string>
+    <string name="browser_https_preparing">Підготовка захищеної адреси…</string>
+    <string name="browser_https_retry">Очікування інтернету для завершення налаштування</string>
+    <string name="browser_https_unavailable">Налаштування захищеної адреси потребує уваги</string>
+</resources>

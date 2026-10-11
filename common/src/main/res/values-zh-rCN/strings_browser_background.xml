@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_background_required">允许后台运行，让 CarPlay 在锁屏后保持连接。</string>
+    <string name="browser_background_restricted">Android 正在限制后台运行。请在应用设置中允许。</string>
+</resources>
