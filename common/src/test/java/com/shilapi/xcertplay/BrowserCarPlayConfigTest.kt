@@ -1,12 +1,17 @@
 package com.shilapi.xcertplay
 
 import android.content.ContextWrapper
+import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Handler
 import com.shilapi.xcertplay.airplay.AirPlayConfig
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
 import com.shilapi.xcertplay.airplay.AirPlayDisplayConfig
+import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
+import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
 import com.shilapi.xcertplay.orchestration.CarPlayTransport
+import java.io.ByteArrayOutputStream
 import java.util.concurrent.ExecutorService
 import org.junit.After
 import org.junit.Assert.*
@@ -31,6 +36,7 @@ class BrowserCarPlayConfigTest {
             override fun getPackageName() = "com.shihab.diplay.browsertest"
         })
         activity.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        AirPlayPersistence.clearCustomAirPlayIcon(activity)
         AirPlayPersistence.saveManualHotspotSsid(activity, "Test hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(activity, "test-only-1234")
         ReflectionHelpers.setField(activity, "airPlayIdentity", AirPlayIdentity.generate())
@@ -42,6 +48,7 @@ class BrowserCarPlayConfigTest {
         for (name in listOf("teardownExecutor", "airPlayCommandExecutor"))
             ReflectionHelpers.getField<ExecutorService>(activity, name).shutdownNow()
         activity.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        AirPlayPersistence.clearCustomAirPlayIcon(activity)
     }
 
     @Test fun defaultKeepsTheWorkingCanvasAndRoutesAudioDirectlyFromIphone() {
@@ -51,6 +58,39 @@ class BrowserCarPlayConfigTest {
         assertTrue(config.disableAudioOutput)
         assertFalse(config.microphone)
         assertFalse(config.hevc)
+    }
+
+    @Test fun browserHostAdvertisesTeslaForFreshAndLegacyCarButtons() {
+        val expected = activity.resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
+        for (label in listOf(null, "BYD")) {
+            activity.getSharedPreferences("xcertplay_airplay", 0).edit().putString("oem_label", label).commit()
+            val info = AirPlayInfoPlist.build(config(100))
+            assertEquals("Tesla", info["oemIconLabel"])
+            val icon = (info["oemIcons"] as List<*>).single() as Map<*, *>
+            assertArrayEquals(expected, icon["imageData"] as ByteArray)
+            assertEquals(192, icon["widthPixels"])
+            assertEquals(192, icon["heightPixels"])
+        }
+    }
+
+    @Test fun retainedBrowserHostReadsCustomCarButtonForItsNextHandshake() {
+        val previous = config(100)
+        val bitmap = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val custom = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bitmap.recycle()
+        AirPlayPersistence.saveOemLabel(activity, "My car")
+        AirPlayPersistence.saveCustomAirPlayIcon(activity, custom)
+
+        val updated = config(100)
+        val info = AirPlayInfoPlist.build(updated)
+        assertEquals("My car", info["oemIconLabel"])
+        val icon = (info["oemIcons"] as List<*>).single() as Map<*, *>
+        assertArrayEquals(custom, icon["imageData"] as ByteArray)
+        assertEquals(48, icon["widthPixels"])
+        assertEquals(48, icon["heightPixels"])
+        assertEquals(previous.main, updated.main)
+        assertEquals(previous.deviceId, updated.deviceId)
+        assertEquals(previous.disableAudioOutput, updated.disableAudioOutput)
     }
 
     @Test fun browserQualityChangesTheAdvertisedSourceAndRetainsNativeAreas() {

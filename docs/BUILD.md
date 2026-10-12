@@ -45,7 +45,7 @@ build directories are excluded unless tracked.
 
 ## Release build
 
-Release application ID: `co.tesair.app`. Version: `1.0.0` (code `63`).
+Release application ID: `co.tesair.app`. Version: `1.0.1` (code `64`).
 
 Supply these environment variables outside the repository:
 
