@@ -1,12 +1,18 @@
 package com.shilapi.xcertplay
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.Color
 import com.shilapi.xcertplay.airplay.AirPlayIdentity
+import com.shilapi.xcertplay.airplay.AirPlayInfoPlist
+import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.orchestration.CarPlayTransport
 import com.shilapi.xcertplay.orchestration.ManualHotspotSecurity
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.transport.VehicleStatusProvider
 import com.shilapi.xcertplay.transport.VehicleStatusSnapshot
+import java.io.ByteArrayOutputStream
+import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -24,10 +30,62 @@ class BrowserCarPlayConfigurationTest {
     @Before fun setUp() {
         context = RuntimeEnvironment.getApplication()
         context.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+        AirPlayPersistence.clearCustomAirPlayIcon(context)
         AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(context, "Test hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(context, "test-only-1234")
         AirPlayPersistence.saveManualHotspotSecurity(context, ManualHotspotSecurity.WPA2)
+    }
+
+    @After fun tearDown() {
+        AirPlayPersistence.clearCustomAirPlayIcon(context)
+        context.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
+    }
+
+    @Test fun freshReceiverAdvertisesTeslaCarButtonToIphone() {
+        val video = BrowserCarPlayConfiguration.video(context, identity, BrowserCarPlayLayout.create(1182, 920))
+        val info = AirPlayInfoPlist.build(video)
+        assertEquals("Tesla", info["oemIconLabel"])
+        assertEquals(true, info["oemIconVisible"])
+        val icon = (info["oemIcons"] as List<*>).single() as Map<*, *>
+        val expected = context.resources.openRawResource(R.raw.ic_car_home).use { it.readBytes() }
+        assertArrayEquals(expected, icon["imageData"] as ByteArray)
+        assertEquals(192, icon["widthPixels"])
+        assertEquals(192, icon["heightPixels"])
+    }
+
+    @Test fun savedLegacyOrBlankLabelUsesTeslaWithoutResettingConnectionSettings() {
+        AirPlayPersistence.saveWidthPhysicalMm(context, 250)
+        val runtimeBefore = BrowserCarPlayConfiguration.runtime(context, identity)
+        for (label in listOf("BYD", "", "   ")) {
+            context.getSharedPreferences("xcertplay_airplay", 0).edit().putString("oem_label", label).commit()
+            val video = BrowserCarPlayConfiguration.video(context, identity, BrowserCarPlayLayout.create(1182, 920))
+            assertEquals("Tesla", AirPlayInfoPlist.build(video)["oemIconLabel"])
+            assertEquals(250, video.main.widthPhysicalMm)
+            assertEquals("Test hotspot", AirPlayPersistence.loadManualHotspotSsid(context))
+            assertEquals("test-only-1234", AirPlayPersistence.loadManualHotspotPassphrase(context))
+            val runtimeAfter = BrowserCarPlayConfiguration.runtime(context, identity)
+            assertEquals(runtimeBefore.identification, runtimeAfter.identification)
+            assertEquals(runtimeBefore.transport, runtimeAfter.transport)
+        }
+    }
+
+    @Test fun customCarButtonNameAndImageAreSentUnchanged() {
+        val bitmap = Bitmap.createBitmap(48, 48, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.BLUE) }
+        val custom = ByteArrayOutputStream().also { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }.toByteArray()
+        bitmap.recycle()
+        AirPlayPersistence.saveOemLabel(context, "My car")
+        AirPlayPersistence.saveCustomAirPlayIcon(context, custom)
+
+        val video = BrowserCarPlayConfiguration.video(context, identity, BrowserCarPlayLayout.create(1182, 920))
+        val info = AirPlayInfoPlist.build(video)
+        assertEquals("My car", info["oemIconLabel"])
+        val icon = (info["oemIcons"] as List<*>).single() as Map<*, *>
+        assertArrayEquals(custom, icon["imageData"] as ByteArray)
+        assertEquals(48, icon["widthPixels"])
+        assertEquals(48, icon["heightPixels"])
+        assertArrayEquals(custom, AirPlayPersistence.loadCustomAirPlayIconFile(context)!!.readBytes())
+        assertEquals("My car", AirPlayPersistence.loadOemLabel(context))
     }
 
     @Test fun headlessNegotiationKeepsTeslaQualitySizeAndDirectAudio() {

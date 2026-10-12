@@ -22,7 +22,7 @@ TesAir's app icon includes the Tesla symbol. Tesla, iPhone, CarPlay and Android 
 
 The retained `common/src/main/res/drawable/ic_carplay.png` came from [Apple's developer asset](https://developer.apple.com/assets/elements/icons/carplay/carplay-96x96_2x.png). It is an Apple asset, not project code under GPL. Its presence does not establish approval or certification.
 
-The `common/src/main/res/raw/ic_car_home.png` depicts BYD branding and remains referenced as a receiver configuration fallback. It is inherited material, not TesAir's public app mark; no independent redistribution permission is asserted here.
+The CarPlay car-button image (`common/src/main/res/raw/ic_car_home.png`) is rendered from `artwork/carplay-home.svg`. Its Tesla symbol comes from [Simple Icons 13.0.0](https://github.com/simple-icons/simple-icons/blob/13.0.0/icons/tesla.svg), distributed under [CC0 1.0](https://github.com/simple-icons/simple-icons/blob/13.0.0/LICENSE.md). Tesla's trademark rights remain unaffected.
 
 Additional resource attribution:
 

@@ -4,7 +4,7 @@
 
 [Releases](https://github.com/ioancarneala/tesair/releases) · [Setup](#setup) · [Report a problem](https://github.com/ioancarneala/tesair/issues/new/choose)
 
-**v1.0.0.** [Download the APK](https://github.com/ioancarneala/tesair/releases/download/v1.0.0/TesAir-v1.0.0.apk).
+**v1.0.1.** [Download the APK](https://github.com/ioancarneala/tesair/releases/download/v1.0.1/TesAir-v1.0.1.apk).
 
 ## What it does
 
