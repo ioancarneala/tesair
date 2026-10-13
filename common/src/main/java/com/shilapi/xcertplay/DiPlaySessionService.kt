@@ -6,10 +6,13 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.Context
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
+import android.os.BatteryManager
 import android.os.Build
 import android.os.Handler
 import android.os.IBinder
@@ -52,6 +55,10 @@ class DiPlaySessionService : Service() {
     }
     private var cpuLock: PowerManager.WakeLock? = null
     private var wifiLock: WifiManager.WifiLock? = null
+    private var wifiLockMode = -1
+    @Volatile private var charging = true
+    @Volatile private var browserClientConnected = false
+    private var batteryReceiver: BroadcastReceiver? = null
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -146,13 +153,12 @@ class DiPlaySessionService : Service() {
         val token = Any().also { browserStartToken = it }
         cpuLock = getSystemService(PowerManager::class.java)
             .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DiPlay:browser-stream").apply { acquire() }
-        @Suppress("DEPRECATION")
-        val lock = applicationContext.getSystemService(WifiManager::class.java)
-            ?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "DiPlay:browser-stream")
-        wifiLock = lock?.apply { acquire() }
+        observePower()
+        updateWifiLock()
         BrowserReliabilityDiagnostics.record(this,
             "power_locks cpu=${cpuLock?.isHeld == true} wifi=${wifiLock?.isHeld == true}")
         val output = browserOutput(this)
+        output.onClientConnection = ::onBrowserClientConnection
         browserWorker.execute {
             val failure = runCatching { output.start() }.exceptionOrNull()
             browserHandler.post {
@@ -233,12 +239,69 @@ class DiPlaySessionService : Service() {
         if (wifiLock?.isHeld == true) wifiLock?.release()
         cpuLock = null
         wifiLock = null
+        wifiLockMode = -1
     }
+
+    /** Tracks charging state so the radio can back off while parked on battery. */
+    private fun observePower() {
+        if (batteryReceiver != null) return
+        val receiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
+                onChargingChanged(plugged != 0)
+            }
+        }
+        batteryReceiver = receiver
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        // ACTION_BATTERY_CHANGED is a sticky, protected system broadcast, so it is exempt from the
+        // export-flag rule. Still pass the flag where the platform supports it (API 33+).
+        val sticky = if (Build.VERSION.SDK_INT >= 33) {
+            registerReceiver(receiver, filter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            registerReceiver(receiver, filter)
+        }
+        onChargingChanged((sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+    }
+
+    private fun onChargingChanged(nowCharging: Boolean) {
+        if (nowCharging == charging) return
+        charging = nowCharging
+        browserHandler.post { updateWifiLock() }
+    }
+
+    private fun onBrowserClientConnection(connected: Boolean) {
+        if (browserClientConnected == connected) return
+        browserClientConnected = connected
+        updateWifiLock()
+    }
+
+    /**
+     * Holds the WiFi radio at high-performance only while a browser is streaming or the phone is
+     * externally powered. On battery with no browser client it falls back to a normal full lock,
+     * which keeps the server reachable without forcing maximum radio power. The CPU lock is
+     * unchanged because the server must answer the Tesla browser promptly.
+     */
+    @Suppress("DEPRECATION")
+    private fun updateWifiLock() {
+        if (destroyed || !browserRequested) return
+        val mode = browserWifiLockMode(charging, browserClientConnected)
+        if (wifiLockMode == mode) return
+        if (wifiLock?.isHeld == true) wifiLock?.release()
+        val lock = applicationContext.getSystemService(WifiManager::class.java)
+            ?.createWifiLock(mode, "DiPlay:browser-stream")
+        wifiLock = lock?.apply { acquire() }
+        wifiLockMode = mode
+        BrowserReliabilityDiagnostics.record(this,
+            "wifi_lock mode=${if (mode == WifiManager.WIFI_MODE_FULL_HIGH_PERF) "high_perf" else "full"} held=${lock?.isHeld == true}")
+    }
+
     override fun onDestroy() {
         destroyed = true
         if (browserCarPlayEnabled(this)) BrowserReliabilityDiagnostics.record(this,
             "service_destroy requestedStop=$stopRequested")
         cancelBrowserRecovery()
+        batteryReceiver?.let { runCatching { unregisterReceiver(it) } }
+        batteryReceiver = null
         if (browserCarPlayEnabled(this)) {
             BrowserAddressService.pause(this)
             val output = synchronized(Companion) { browser.also { browser = null } }
@@ -275,6 +338,12 @@ internal fun sessionMicrophoneRequired(context: Context): Boolean {
     return CarPlayBackgroundSession.snapshot()?.display?.microphoneRequired
         ?: false
 }
+
+/** High-performance WiFi is only warranted while streaming or externally powered. */
+@Suppress("DEPRECATION")
+internal fun browserWifiLockMode(charging: Boolean, browserClientConnected: Boolean): Int =
+    if (charging || browserClientConnected) WifiManager.WIFI_MODE_FULL_HIGH_PERF
+    else WifiManager.WIFI_MODE_FULL
 
 /** Browser pixels are persisted independently of Android window size, orientation, or lock state. */
 internal object BrowserCarPlayViewport {

@@ -56,6 +56,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     var onStatusChanged: () -> Unit = {}
     var onFirstFrameRendered: () -> Unit = {}
     @Volatile var onDiagnostic: (String) -> Unit = {}
+    @Volatile var onClientConnection: (Boolean) -> Unit = {}
     val clientCount: Int get() = server.clientCount()
     val certificateSyncState: SharedCertificateSync.State get() = certificates.state
     val hasRenderedVideo: Boolean get() = synchronized(mediaLock) {
@@ -82,10 +83,14 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         server.setGestureHandler(::onControlMessage)
         server.setRenderedHandler(::frameRendered)
         server.setConnectionHandler {
+            val connected = server.clientCount() > 0
             synchronized(mediaLock) { mediaGeneration++; renderedGeneration = -1 }
-            if (server.clientCount() == 0) cancelTouch()
+            if (!connected) cancelTouch()
             main.post {
-                if (!closed.get()) onStatusChanged()
+                if (!closed.get()) {
+                    onClientConnection(connected)
+                    onStatusChanged()
+                }
             }
         }
     }

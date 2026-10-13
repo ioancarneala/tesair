@@ -154,6 +154,45 @@ class BrowserBootReceiverTest {
         assertNoLaunch()
     }
 
+    @Test fun powerConnectedResumesARequestedReceiver() {
+        configure()
+        AirPlayPersistence.saveAutoStartOnBoot(browser, true)
+        BrowserSessionRecovery.markStarted(browser)
+        receive(Intent.ACTION_POWER_CONNECTED)
+
+        assertRecoveryServiceRequested()
+        assertTrue(BrowserSessionRecovery.requested(browser))
+    }
+
+    @Test fun powerConnectedRespectsTheBootOptOut() {
+        configure()
+        AirPlayPersistence.saveAutoStartOnBoot(browser, false)
+        BrowserSessionRecovery.markStarted(browser)
+        receive(Intent.ACTION_POWER_CONNECTED)
+
+        assertNoLaunch()
+        assertTrue(BrowserSessionRecovery.requested(browser))
+    }
+
+    @Test fun powerConnectedDoesNotStartAReceiverThatWasNeverRequested() {
+        configure()
+        AirPlayPersistence.saveAutoStartOnBoot(browser, true)
+        receive(Intent.ACTION_POWER_CONNECTED)
+
+        assertNoLaunch()
+        assertFalse(BrowserSessionRecovery.requested(browser))
+    }
+
+    @Test fun powerDisconnectedNeverStartsOrStopsAnything() {
+        configure()
+        AirPlayPersistence.saveAutoStartOnBoot(browser, true)
+        BrowserSessionRecovery.markStarted(browser)
+        receive(Intent.ACTION_POWER_DISCONNECTED)
+
+        assertNoLaunch()
+        assertTrue(BrowserSessionRecovery.requested(browser))
+    }
+
     private fun receive(action: String) = BootReceiver().onReceive(browser, Intent(action))
 
     private fun assertRecoveryServiceRequested() {

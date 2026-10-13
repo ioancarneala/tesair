@@ -5,30 +5,49 @@ import android.content.Context
 import android.content.Intent
 import android.util.Log
 
-/** Starts the CarPlay host after boot when the user has enabled the startup option. */
+/**
+ * Starts or resumes the CarPlay host after boot and when external power returns.
+ *
+ * The browser build keeps a phone installed in the car. Its USB power drops when the car is off,
+ * so the session must resume automatically when power returns instead of waiting for a reboot.
+ */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED &&
-            intent.action != Intent.ACTION_MY_PACKAGE_REPLACED) return
+        when (intent.action) {
+            Intent.ACTION_POWER_CONNECTED -> onPowerConnected(context)
+            Intent.ACTION_POWER_DISCONNECTED -> {
+                // No immediate teardown here: the session service observes the charging state and
+                // backs off its radio locks on its own. This record only keeps the event visible.
+                if (browserCarPlayEnabled(context)) {
+                    BrowserReliabilityDiagnostics.record(context, "power_disconnected")
+                }
+            }
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED ->
+                onBootOrUpdate(context, intent.action == Intent.ACTION_MY_PACKAGE_REPLACED)
+            else -> Unit
+        }
+    }
+
+    private fun onPowerConnected(context: Context) {
+        if (!browserCarPlayEnabled(context)) return
+        val enabled = BrowserSessionRecovery.canRecover(context) &&
+            AirPlayPersistence.loadAutoStartOnBoot(context)
+        BrowserReliabilityDiagnostics.record(context, "power_connected enabled=$enabled")
+        if (!enabled) return
+        startBrowserSession(context)
+    }
+
+    private fun onBootOrUpdate(context: Context, update: Boolean) {
         if (browserCarPlayEnabled(context)) {
             val enabled = BrowserSessionRecovery.canRecover(context) &&
-                (intent.action == Intent.ACTION_MY_PACKAGE_REPLACED || AirPlayPersistence.loadAutoStartOnBoot(context))
+                (update || AirPlayPersistence.loadAutoStartOnBoot(context))
             StartupDiagnosticSnapshot.received(context, enabled)
             BrowserReliabilityDiagnostics.record(context,
-                "startup_received update=${intent.action == Intent.ACTION_MY_PACKAGE_REPLACED} enabled=$enabled")
+                "startup_received update=$update enabled=$enabled")
             if (!enabled) return
-            try {
-                context.startForegroundService(Intent(context, DiPlaySessionService::class.java)
-                    .setAction(DiPlaySessionService.ACTION_RECOVER))
-                StartupDiagnosticSnapshot.launchResult(context, service = true)
-            } catch (error: RuntimeException) {
-                StartupDiagnosticSnapshot.launchResult(context, error, service = true)
-                BrowserReliabilityDiagnostics.record(context,
-                    "startup_service_failed class=${error.javaClass.simpleName}")
-            }
+            startBrowserSession(context)
             return
         }
-        if (intent.action != Intent.ACTION_BOOT_COMPLETED) return
         val launchEnabled = AirPlayPersistence.loadAutoStartOnBoot(context)
         StartupDiagnosticSnapshot.received(context, launchEnabled)
         BrowserReliabilityDiagnostics.record(context,
@@ -50,6 +69,18 @@ class BootReceiver : BroadcastReceiver() {
             StartupDiagnosticSnapshot.launchResult(context, error)
             BrowserReliabilityDiagnostics.record(context, "boot_activity_failed")
             Log.w(TAG, "Boot auto-start could not launch DiPlayActivity", error)
+        }
+    }
+
+    private fun startBrowserSession(context: Context) {
+        try {
+            context.startForegroundService(Intent(context, DiPlaySessionService::class.java)
+                .setAction(DiPlaySessionService.ACTION_RECOVER))
+            StartupDiagnosticSnapshot.launchResult(context, service = true)
+        } catch (error: RuntimeException) {
+            StartupDiagnosticSnapshot.launchResult(context, error, service = true)
+            BrowserReliabilityDiagnostics.record(context,
+                "startup_service_failed class=${error.javaClass.simpleName}")
         }
     }
 
