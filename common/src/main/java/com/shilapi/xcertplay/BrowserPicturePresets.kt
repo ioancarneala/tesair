@@ -19,8 +19,8 @@ internal object BrowserPicturePresets {
         Preset(160, R.string.settings_browser_preferences_sharpest),
     )
     val smoothness = listOf(
-        Preset(30, R.string.settings_browser_preferences_balanced),
-        Preset(60, R.string.settings_browser_preferences_smoother),
+        Preset(30, R.string.s_30_fps_lighter_load),
+        Preset(60, R.string.s_60_fps_smoother_motion),
     )
 
     fun title(presets: List<Preset>, current: Int, @StringRes custom: Int) =

@@ -4,7 +4,7 @@
 
 [Releases](https://github.com/ioancarneala/tesair/releases) · [Setup](#setup) · [Report a problem](https://github.com/ioancarneala/tesair/issues/new/choose)
 
-**v1.0.1.** [Download the APK](https://github.com/ioancarneala/tesair/releases/download/v1.0.1/TesAir-v1.0.1.apk).
+**v1.0.3.** [Download the APK](https://github.com/ioancarneala/tesair/releases/tag/v1.0.3).
 
 ## What it does
 
@@ -17,8 +17,16 @@
 
 An iPhone, a compatible Android phone running **Android 9 or later**, and a Tesla
 with a browser. The Android phone provides a hotspot with internet access; keep it
-powered during use. Tested on OnePlus 7T Pro and Xiaomi 12X; other devices and
-firmware versions are not yet verified.
+powered during use.
+
+Tested and working in a Tesla Model 3 (Highland, HW4) at 60 fps, and on OnePlus 7T Pro
+and Xiaomi 12X phones. Other devices and firmware versions are expected to work but
+are not yet individually verified.
+
+The Tesla browser must support the WebCodecs video decoder, which in practice means
+the AMD Ryzen-based system (MCU3, around 2022 and newer, including HW4 cars). The
+older Intel Atom (MCU2) and Tegra (MCU1) browsers cannot decode the video and are not
+yet supported.
 
 ## Setup
 
