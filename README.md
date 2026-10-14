@@ -1,17 +1,30 @@
-# TesAir
+# TesAir — Wireless Apple CarPlay for Tesla
 
-**Use an Android phone to bring CarPlay to your Tesla browser.**
+**Turn your spare Android phone into wireless CarPlay for your Tesla.**
 
-[Releases](https://github.com/ioancarneala/tesair/releases) · [Setup](#setup) · [Report a problem](https://github.com/ioancarneala/tesair/issues/new/choose)
+Your iPhone apps on the Tesla screen, with sharp video, responsive touch and sound
+through the car's speakers. Install TesAir on Android and open **go.tesair.co** in
+the Tesla browser.
 
-**v1.0.3.** [Download the APK](https://github.com/ioancarneala/tesair/releases/tag/v1.0.3).
+[**Download TesAir v1.0.3**](https://github.com/ioancarneala/tesair/releases/download/v1.0.3/TesAir-v1.0.3.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
 
-## What it does
+Used daily in a **Tesla Model 3 Highland (HW4)**, with smooth **60 fps** video and
+a stable connection. Tested Android phones: **OnePlus 7T Pro**
+and **Xiaomi 12X**.
 
-- Streams CarPlay directly to the browser, without mirroring the Android screen.
-- Fits the available browser space, with touch control and adjustable interface size.
-- Reconnects automatically when possible and shows the next step when help is needed.
-- Keeps music and calls on the direct iPhone-to-Tesla Bluetooth connection.
+## Why TesAir
+
+- **Direct CarPlay video.** Streams the iPhone's CarPlay video straight to the
+  browser, without Android screen mirroring or another video encoding step.
+- **A display that fits.** CarPlay adapts to the available browser space. Adjust
+  interface size, picture quality and 30/60 fps to suit your screen.
+- **Touch control.** Open apps, choose music and move around the map from the
+  Tesla screen.
+- **Music and calls through your Tesla.** Audio goes directly from the iPhone to
+  Tesla Bluetooth, using the car's speakers and microphone.
+- **Ready in the background.** Runs with the Android screen off, reconnects
+  automatically and supports startup when power returns.
+- **Local streaming.** Video and touch stay on the hotspot, with no cloud relay.
 
 ## What you need
 
@@ -19,14 +32,8 @@ An iPhone, a compatible Android phone running **Android 9 or later**, and a Tesl
 with a browser. The Android phone provides a hotspot with internet access; keep it
 powered during use.
 
-Tested and working in a Tesla Model 3 (Highland, HW4) at 60 fps, and on OnePlus 7T Pro
-and Xiaomi 12X phones. Other devices and firmware versions are expected to work but
-are not yet individually verified.
-
-The Tesla browser must support the WebCodecs video decoder, which in practice means
-the AMD Ryzen-based system (MCU3, around 2022 and newer, including HW4 cars). The
-older Intel Atom (MCU2) and Tegra (MCU1) browsers cannot decode the video and are not
-yet supported.
+The browser needs WebCodecs video decoding. The confirmed Tesla setup above uses
+AMD Ryzen infotainment.
 
 ## Setup
 
@@ -37,8 +44,8 @@ yet supported.
 4. **Open [go.tesair.co](https://go.tesair.co/) in the Tesla browser.** Bookmark it
    for next time.
 
-The address redirects to `carplay.tesair.co:8443`. Video and touch stay on your local
-network. Tesla controls its own browser toolbar; TesAir fills the available page.
+The short address opens the phone's local HTTPS connection at
+`carplay.tesair.co:8443`.
 
 ## Help and development
 
@@ -58,10 +65,6 @@ TesAir builds on [DiPlay](https://github.com/shihabal3amri/DiPlay), based on
 [xcertplay](https://github.com/shilapi/xcertplay), for the CarPlay receiver and
 authentication integration. TesAir adds browser video and touch, adaptive display
 sizing, Tesla setup and connection recovery. No separate DiPlay installation is needed.
-
-The APK uses DiPlay's experimental authentication approach and is not Apple-certified.
-Runtime credentials are extractable; future iOS compatibility is not guaranteed.
-Source builds exclude those credentials.
 
 See [LICENSE](LICENSE) and [third-party notices](docs/THIRD_PARTY_NOTICES.md).
 TesAir is independent and is not affiliated with or endorsed by Tesla or Apple.

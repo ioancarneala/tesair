@@ -45,7 +45,8 @@ build directories are excluded unless tracked.
 
 ## Release build
 
-Release application ID: `co.tesair.app`. Version: `1.0.1` (code `64`).
+Release application ID: `co.tesair.app`. The version and version code are defined in
+[`mobile/build.gradle.kts`](../mobile/build.gradle.kts).
 
 Supply these environment variables outside the repository:
 
@@ -66,5 +67,7 @@ or cloud administration credentials. Keep the same application ID and signing ke
 for future updates.
 
 Verify the signed APK and publish it with its SHA-256 checksum and matching source
-in GitHub Releases. Record device tests in the release notes; unit tests alone do
-not establish device compatibility.
+in GitHub Releases. Lead release notes with user-visible improvements and any
+required update steps. Keep detailed validation in the pull request; mention
+device testing when it adds useful compatibility information, and known issues
+when they affect users.
