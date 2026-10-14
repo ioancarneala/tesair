@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">熱點密碼</string>
     <string name="onboarding_network_password_hint">僅開放熱點可留空</string>
     <string name="onboarding_network_settings">開啟熱點設定</string>
-    <string name="onboarding_network_hint">開啟熱點，並保持行動數據開啟，讓 Tesla 可以上網。</string>
+    <string name="onboarding_network_hint">開啟熱點並關閉自動關閉功能。保持行動數據開啟，為 Tesla 提供網際網路。</string>
     <string name="onboarding_network_save">儲存並繼續</string>
     <string name="onboarding_network_saved">資訊已儲存。請保持熱點開啟。</string>
     <string name="onboarding_network_change">改用這支手機的熱點</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">允許背景執行</string>
     <string name="onboarding_done_label">已完成</string>
     <string name="onboarding_wait_label">等待中…</string>
-    <string name="onboarding_iphone_title">接著設定 iPhone。</string>
-    <string name="onboarding_iphone_body">開啟 Wi-Fi 和藍牙。與這支 Android 手機配對，然後在下方選擇 iPhone。</string>
+    <string name="onboarding_iphone_title">配對你的 iPhone。</string>
+    <string name="onboarding_iphone_body">開啟 Wi-Fi 與藍牙，然後開啟設定 → 藍牙。</string>
     <string name="onboarding_iphone_choose">選擇你的 iPhone</string>
     <string name="onboarding_iphone_selected">已選擇：%1$s</string>
     <string name="onboarding_iphone_pair">開啟藍牙設定</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">顯示</string>
     <string name="onboarding_password_hide_short">隱藏</string>
     <string name="onboarding_network_exact_hint">名稱和密碼須與熱點設定中的內容完全一致。</string>
-    <string name="onboarding_bluetooth_name">尋找：%1$s</string>
+    <string name="onboarding_bluetooth_name">在 iPhone 上點選 %1$s</string>
     <string name="onboarding_background_approved_title">這部手機已準備好。</string>
     <string name="onboarding_background_approved_body">接下來，連接 iPhone。</string>
 </resources>

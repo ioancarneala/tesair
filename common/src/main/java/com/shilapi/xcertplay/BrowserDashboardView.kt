@@ -63,8 +63,8 @@ internal class BrowserDashboardView(
             !batteryAllowed -> Step.BACKGROUND
             stopped -> Step.STOPPED
             pictureReady -> Step.READY
-            hotspotNeedsAttention -> Step.HOTSPOT
             bluetoothRequired -> Step.BLUETOOTH
+            hotspotNeedsAttention -> Step.HOTSPOT
             setupNeedsAttention -> Step.SETUP
             receiverFailed -> Step.RETRY
             !serverRunning || !sessionRunning -> Step.STARTING
@@ -229,6 +229,7 @@ internal class BrowserDashboardView(
         illustration.setScene(when (next.step) {
             Step.READY -> BrowserOnboardingArtView.Scene.READY
             Step.HOTSPOT, Step.ADDRESS_HELP -> BrowserOnboardingArtView.Scene.HOTSPOT
+            Step.BLUETOOTH -> BrowserOnboardingArtView.Scene.ANDROID_BLUETOOTH
             Step.PERMISSIONS, Step.VPN, Step.ROUTE, Step.ROUTE_STARTING,
             Step.BACKGROUND -> BrowserOnboardingArtView.Scene.BACKGROUND
             Step.BROWSER, Step.VIDEO, Step.ADDRESS_WAIT -> BrowserOnboardingArtView.Scene.TESLA_BROWSER

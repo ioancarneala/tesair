@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_iphone_settings_label">الإعدادات</string>
+    <string name="onboarding_iphone_bluetooth_label">Bluetooth</string>
+    <string name="onboarding_iphone_devices_label">أجهزة أخرى</string>
+    <string name="onboarding_bluetooth_enable_title">شغّل Bluetooth.</string>
+    <string name="onboarding_bluetooth_enable_body">يحتاج هاتف Android هذا إلى Bluetooth للاتصال بـ iPhone.</string>
+    <string name="onboarding_bluetooth_enable_action">تشغيل Bluetooth</string>
+    <string name="onboarding_hotspot_off_title">شغّل نقطة الاتصال.</string>
+    <string name="onboarding_hotspot_off_body">شغّلها وأوقف الإيقاف التلقائي.</string>
+    <string name="onboarding_iphone_visible">بدء الاقتران</string>
+    <string name="onboarding_iphone_already_paired">تم الإقران؟ اختر iPhone</string>
+    <string name="onboarding_iphone_pair_confirm">أكّد رمز الإقران نفسه على الهاتفين.</string>
+    <string name="onboarding_iphone_start_title">اتصل بـ CarPlay.</string>
+    <string name="onboarding_iphone_start_body">سيتصل iPhone بنقطة الاتصال تلقائيًا.</string>
+    <string name="onboarding_iphone_change">تغيير iPhone</string>
+    <string name="onboarding_iphone_select_title">اختر iPhone.</string>
+    <string name="onboarding_iphone_select_body">اختر iPhone المقترن بهاتف Android هذا.</string>
+    <string name="onboarding_iphone_pair_another">إقران iPhone آخر</string>
+</resources>

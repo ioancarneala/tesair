@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.ComponentCallbacks
 import android.content.pm.ApplicationInfo
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.os.Handler
 import android.os.Looper
 import android.view.Surface
@@ -55,6 +57,8 @@ class BrowserCarPlayRuntimeTest {
             override fun unregisterComponentCallbacks(callback: ComponentCallbacks) = baseContext.unregisterComponentCallbacks(callback)
         }
         CarPlayBackgroundSession.clear()
+        shadowOf(requireNotNull(context.getSystemService(BluetoothManager::class.java).adapter))
+            .setState(BluetoothAdapter.STATE_ON)
         output = mock(BrowserStreamOutput::class.java)
         runtime = BrowserCarPlayRuntime(context, output)
         get<ExecutorService>("worker").shutdownNow()
@@ -142,6 +146,138 @@ class BrowserCarPlayRuntimeTest {
             drainWorker()
             assertTrue(construction.constructed().isEmpty())
             assertFalse(CarPlayBackgroundSession.hasSession())
+        }
+    }
+
+    @Test fun manualRetryClearsTheConfigurationGateAndLoadsCorrectedCredentials() {
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Old test hotspot", "test-only-1234")
+        AirPlayPersistence.saveMfiTarget(context, MfiTarget.USB_CH341)
+        set("setupNeedsAttention", true)
+        get<WirelessStartupRetryBudget>("retryBudget").nextDelayMillis()
+        runtime.start()
+        verify(controller, never()).close()
+
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Updated test hotspot", "test-only-5678")
+        var prepared: CarPlayRuntimeConfig? = null
+        mockConstruction(CarPlayController::class.java) { _, construction ->
+            prepared = construction.arguments()[1] as CarPlayRuntimeConfig
+        }.use { construction ->
+            runtime.reconnect()
+            assertFalse(runtime.setupNeedsAttention)
+            assertEquals(0, get<WirelessStartupRetryBudget>("retryBudget").retries)
+            drainWorker()
+
+            verify(controller, times(1)).close()
+            assertEquals(1, construction.constructed().size)
+            verify(construction.constructed().single()).start()
+            assertEquals("Updated test hotspot", prepared?.existingWifiSsid)
+            assertEquals("test-only-5678", prepared?.existingWifiPassphrase)
+            assertTrue(CarPlayBackgroundSession.isOwner(runtime))
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun manualRetryBypassesAQueuedBackoffWithoutLeavingTheOldTimerLive() {
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Test hotspot", "test-only-1234")
+        AirPlayPersistence.saveMfiTarget(context, MfiTarget.USB_CH341)
+        repeat(4) { get<WirelessStartupRetryBudget>("retryBudget").nextDelayMillis() }
+        listener().onTransportError("test interruption")
+        assertTrue(runtime.manualRecoveryPending)
+
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.reconnect()
+            assertFalse(runtime.manualRecoveryPending)
+            assertNull(get<Runnable?>("retry"))
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            verify(controller, times(1)).close()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30))
+            worker.runAll()
+            assertEquals(1, construction.constructed().size)
+            verify(construction.constructed().single(), never()).close()
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun manualRecoveryDoesNotInterruptPreparationRetirementOrAnActiveSession() {
+        set("setupNeedsAttention", true)
+        assertTrue(runtime.manualRecoveryPending)
+        set("preparing", true)
+        assertFalse(runtime.manualRecoveryPending)
+        set("preparing", false)
+        set("retiring", true)
+        assertFalse(runtime.manualRecoveryPending)
+        set("retiring", false)
+        set("activeSession", mock(AirPlaySession::class.java))
+        assertFalse(runtime.manualRecoveryPending)
+        set("activeSession", null)
+        set("requested", false)
+        assertFalse(runtime.manualRecoveryPending)
+    }
+
+    @Test fun bluetoothOffWaitsWithoutPreparingControllersOrPausingRecovery() {
+        CarPlayBackgroundSession.clear()
+        set("controller", null)
+        set("sink", null)
+        set("layout", null)
+        set("requested", false)
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Test hotspot", "test-only-1234")
+        AirPlayPersistence.saveMfiTarget(context, MfiTarget.USB_CH341)
+        val adapter = requireNotNull(context.getSystemService(BluetoothManager::class.java).adapter)
+        shadowOf(adapter).setState(BluetoothAdapter.STATE_OFF)
+
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.start()
+            assertEquals(com.shilapi.xcertplay.orchestration.CarPlayStatus.WaitingForPairedIphone, runtime.status)
+            assertFalse(runtime.setupNeedsAttention)
+            assertFalse(get<Boolean>("preparing"))
+            assertNotNull(get<Runnable?>("retry"))
+            drainWorker()
+            assertTrue(construction.constructed().isEmpty())
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+            drainWorker()
+            assertTrue(construction.constructed().isEmpty())
+
+            shadowOf(adapter).setState(BluetoothAdapter.STATE_ON)
+            runtime.reconnect()
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            verify(construction.constructed().single()).start()
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun unknownBluetoothAdapterPreservesTheExistingControllerStartupPath() {
+        CarPlayBackgroundSession.clear()
+        set("controller", null)
+        set("sink", null)
+        set("layout", null)
+        set("requested", false)
+        val withoutBluetooth = object : ContextWrapper(context) {
+            override fun getSystemService(name: String): Any? =
+                if (name == Context.BLUETOOTH_SERVICE) null else super.getSystemService(name)
+            override fun getApplicationContext(): Context = this
+            override fun registerComponentCallbacks(callback: ComponentCallbacks) = baseContext.registerComponentCallbacks(callback)
+            override fun unregisterComponentCallbacks(callback: ComponentCallbacks) = baseContext.unregisterComponentCallbacks(callback)
+        }
+        set("context", withoutBluetooth)
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Test hotspot", "test-only-1234")
+        AirPlayPersistence.saveMfiTarget(context, MfiTarget.USB_CH341)
+
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.start()
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            verify(construction.constructed().single()).start()
+            runtime.close()
+            drainWorker()
         }
     }
 

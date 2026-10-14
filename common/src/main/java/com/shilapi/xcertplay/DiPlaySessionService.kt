@@ -117,8 +117,17 @@ class DiPlaySessionService : Service() {
             browserHandler.removeCallbacks(browserMaintenance)
             browserHandler.postDelayed(browserMaintenance, BROWSER_MAINTENANCE_MILLIS)
         }
-        if (browserMode && !receiverRetiring && intent?.action == ACTION_RECONNECT) {
-            currentBrowserRuntime()?.reconnect()
+        if (browserMode && !receiverRetiring) {
+            val receiver = currentBrowserRuntime()
+            // Manual Start bypasses a pending backoff or corrected configuration gate once.
+            // Ordinary recovery and a receiver already preparing/connected stay untouched.
+            val manualRecovery = intent?.action == ACTION_RECOVER &&
+                intent.getBooleanExtra(EXTRA_MANUAL_START, false) &&
+                !CarPlayBackgroundSession.active && receiver?.manualRecoveryPending == true
+            if (intent?.action == ACTION_RECONNECT || manualRecovery) {
+                if (manualRecovery) BrowserReliabilityDiagnostics.record(this, "receiver_manual_recovery")
+                receiver?.reconnect()
+            }
         }
         if (browserMode && currentBrowserRuntime() == null &&
             currentBrowserOutput()?.running == true) startBrowserReceiver()

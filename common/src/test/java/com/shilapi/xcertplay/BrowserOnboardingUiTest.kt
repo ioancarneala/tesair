@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay
 
 import android.app.ActivityManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -46,6 +48,7 @@ class BrowserOnboardingUiTest {
         shadowOf(context.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(context.packageName, true)
         shadowOf(context.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(false)
+        shadowOf(context.getSystemService(BluetoothManager::class.java).adapter).setState(BluetoothAdapter.STATE_ON)
         while (shadowOf(context).nextStartedService != null) { /* Discard earlier requests. */ }
     }
 

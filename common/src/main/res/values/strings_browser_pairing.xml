@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_iphone_settings_label">Settings</string>
+    <string name="onboarding_iphone_bluetooth_label">Bluetooth</string>
+    <string name="onboarding_iphone_devices_label">OTHER DEVICES</string>
+    <string name="onboarding_bluetooth_enable_title">Turn on Bluetooth.</string>
+    <string name="onboarding_bluetooth_enable_body">This Android phone needs Bluetooth to connect to your iPhone.</string>
+    <string name="onboarding_bluetooth_enable_action">Enable Bluetooth</string>
+    <string name="onboarding_hotspot_off_title">Turn on your hotspot.</string>
+    <string name="onboarding_hotspot_off_body">Turn it on and disable automatic shutoff.</string>
+    <string name="onboarding_iphone_visible">Start pairing</string>
+    <string name="onboarding_iphone_already_paired">Already paired? Choose your iPhone</string>
+    <string name="onboarding_iphone_pair_confirm">Confirm the same pairing code on both phones.</string>
+    <string name="onboarding_iphone_start_title">Connect CarPlay.</string>
+    <string name="onboarding_iphone_start_body">Your iPhone will join the hotspot automatically.</string>
+    <string name="onboarding_iphone_change">Change iPhone</string>
+    <string name="onboarding_iphone_select_title">Choose your iPhone.</string>
+    <string name="onboarding_iphone_select_body">Select the iPhone paired with this Android phone.</string>
+    <string name="onboarding_iphone_pair_another">Pair another iPhone</string>
+</resources>

@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">热点密码</string>
     <string name="onboarding_network_password_hint">仅开放热点可留空</string>
     <string name="onboarding_network_settings">打开热点设置</string>
-    <string name="onboarding_network_hint">开启热点，并保持移动数据开启，让 Tesla 可以上网。</string>
+    <string name="onboarding_network_hint">打开热点并关闭自动关闭功能。保持移动数据开启，为 Tesla 提供互联网。</string>
     <string name="onboarding_network_save">保存并继续</string>
     <string name="onboarding_network_saved">信息已保存。请保持热点开启。</string>
     <string name="onboarding_network_change">改用这部手机的热点</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">允许后台运行</string>
     <string name="onboarding_done_label">已完成</string>
     <string name="onboarding_wait_label">等待中…</string>
-    <string name="onboarding_iphone_title">接下来设置 iPhone。</string>
-    <string name="onboarding_iphone_body">开启 Wi-Fi 和蓝牙。与这部 Android 手机配对，然后在下方选择 iPhone。</string>
+    <string name="onboarding_iphone_title">配对你的 iPhone。</string>
+    <string name="onboarding_iphone_body">打开 Wi-Fi 和蓝牙，然后打开设置 → 蓝牙。</string>
     <string name="onboarding_iphone_choose">选择你的 iPhone</string>
     <string name="onboarding_iphone_selected">已选择：%1$s</string>
     <string name="onboarding_iphone_pair">打开蓝牙设置</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">显示</string>
     <string name="onboarding_password_hide_short">隐藏</string>
     <string name="onboarding_network_exact_hint">名称和密码须与热点设置中的内容完全一致。</string>
-    <string name="onboarding_bluetooth_name">查找：%1$s</string>
+    <string name="onboarding_bluetooth_name">在 iPhone 上点按 %1$s</string>
     <string name="onboarding_background_approved_title">这部手机已准备好。</string>
     <string name="onboarding_background_approved_body">接下来，连接 iPhone。</string>
 </resources>

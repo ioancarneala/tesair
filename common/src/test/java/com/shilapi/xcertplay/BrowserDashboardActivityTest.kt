@@ -268,6 +268,22 @@ class BrowserDashboardActivityTest {
         assertNull(shadowOf(app).nextStartedService)
     }
 
+    @Test @Config(shadows = [DisabledHotspotShadow::class])
+    fun inactiveSystemHotspotIsShownBeforeAnyStartupFailure() {
+        val activity = openDashboard()
+        val dashboard = ReflectionHelpers.getField<BrowserDashboardView>(activity, "dashboard")
+        assertTrue(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
+
+        CarPlayBackgroundSession.active = true
+        ReflectionHelpers.callInstanceMethod<Unit>(activity, "updateStatus")
+        assertFalse(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
+
+        CarPlayBackgroundSession.active = false
+        AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.EXISTING_WIFI)
+        ReflectionHelpers.callInstanceMethod<Unit>(activity, "updateStatus")
+        assertFalse(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
+    }
+
     @Test fun returningFromVpnSettingsRestartsOnlyTheBrowserRoute() {
         val activity = openDashboard()
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "openVpnSettings")
@@ -351,5 +367,10 @@ class BrowserDashboardActivityTest {
     @Implements(WifiManager::class)
     class EnabledHotspotShadow : ShadowWifiManager() {
         @Implementation fun getWifiApState(): Int = 13
+    }
+
+    @Implements(WifiManager::class)
+    class DisabledHotspotShadow : ShadowWifiManager() {
+        @Implementation fun getWifiApState(): Int = 11
     }
 }

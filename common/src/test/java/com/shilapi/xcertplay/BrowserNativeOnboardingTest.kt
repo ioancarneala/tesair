@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
 import android.app.ActivityManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
@@ -44,7 +46,7 @@ import org.robolectric.shadows.ShadowVpnService
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29], qualifiers = "en-w360dp-h740dp")
+@Config(sdk = [29], qualifiers = "en-w360dp-h740dp", shadows = [OnboardingHotspotShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class BrowserNativeOnboardingTest {
     private val context get() = RuntimeEnvironment.getApplication()
@@ -57,6 +59,11 @@ class BrowserNativeOnboardingTest {
         shadowOf(context.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(false)
         AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.MANUAL)
         grantConnectionPermissions()
+        shadowOf(context.getSystemService(BluetoothManager::class.java).adapter).setState(BluetoothAdapter.STATE_ON)
+        val paired = context.getSystemService(BluetoothManager::class.java).adapter.getRemoteDevice("00:11:22:33:44:55")
+        shadowOf(paired).setName("Example iPhone")
+        shadowOf(context.getSystemService(BluetoothManager::class.java).adapter).setBondedDevices(setOf(paired))
+        OnboardingHotspotShadow.apState = 13
         ShadowVpnService.setPrepareResult(null)
         while (shadowOf(context).nextStartedService != null) { /* Clear earlier test requests. */ }
     }
@@ -130,6 +137,7 @@ class BrowserNativeOnboardingTest {
     }
 
     @Test fun startRechecksBackgroundAccessAfterTheScreenWasRendered() {
+        DiPlayPreferences.savePhone(context, "00:11:22:33:44:55", "Example iPhone")
         val screen = open(Step.IPHONE)
         shadowOf(context).grantPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
@@ -296,6 +304,7 @@ class BrowserNativeOnboardingTest {
 
     @Test fun changingNetworkDuringAnActiveSessionDoesNotReconnectIt() {
         saveNetwork()
+        DiPlayPreferences.savePhone(context, "00:11:22:33:44:55", "Example iPhone")
         val screen = open(Step.NETWORK)
         val controller = retainSession(screen)
         inputs(screen)[0].setText("Replacement hotspot")
@@ -408,14 +417,14 @@ class BrowserNativeOnboardingTest {
     @Test fun iphoneHelpOpensTheRelevantStepWithoutStartingAnUnfinishedGuide() {
         saveNetwork()
         val screen = open(contextualStep = Step.IPHONE)
-        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_iphone_title)))
+        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_iphone_select_title)))
         assertFalse(BrowserOnboardingProgress.shouldResume(context))
         assertEquals(Step.WELCOME, BrowserOnboardingProgress.step(context))
         val saved = Bundle()
         lifecycle!!.saveInstanceState(saved).pause().stop().destroy()
         lifecycle = null
         val restored = open(saved = saved)
-        assertTrue(texts(restored).contains(restored.getString(R.string.onboarding_iphone_title)))
+        assertTrue(texts(restored).contains(restored.getString(R.string.onboarding_iphone_select_title)))
         assertFalse(BrowserOnboardingProgress.shouldResume(context))
         button(restored, R.string.onboarding_back).performClick()
         assertTrue(restored.isFinishing)

@@ -20,7 +20,7 @@ internal class BrowserOnboardingArtView(
     context: Context,
     scene: Scene,
 ) : View(context) {
-    enum class Scene { WELCOME, HOTSPOT, BACKGROUND, IPHONE, TESLA_WIFI, TESLA_BROWSER, AUDIO, READY }
+    enum class Scene { WELCOME, HOTSPOT, BACKGROUND, ANDROID_BLUETOOTH, IPHONE, IPHONE_SETTINGS, TESLA_WIFI, TESLA_BROWSER, AUDIO, READY }
 
     private enum class Symbol { WIFI, BLUETOOTH, SHIELD, CHECK }
     private val palette = BrowserDesign.onboarding(context)
@@ -32,6 +32,12 @@ internal class BrowserOnboardingArtView(
     private val bounds = RectF()
     private var currentScene = scene
     private var artwork = loadArtwork(scene)
+    private var pairingDeviceName: String? = null
+
+    fun setPairingDeviceName(name: String?) {
+        pairingDeviceName = name
+        invalidate()
+    }
 
     init {
         isFocusable = false
@@ -49,15 +55,16 @@ internal class BrowserOnboardingArtView(
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val measuredWidth = resolveSize(BrowserDesign.dp(context, 360), widthMeasureSpec)
         setMeasuredDimension(measuredWidth,
-            resolveSize((measuredWidth * 200f / 360f).roundToInt(), heightMeasureSpec))
+            resolveSize((measuredWidth * (if (currentScene == Scene.IPHONE_SETTINGS) 330f else 200f) / 360f).roundToInt(), heightMeasureSpec))
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if (width == 0 || height == 0) return
-        val scale = min(width / 360f, height / 200f)
+        val drawingHeight = if (currentScene == Scene.IPHONE_SETTINGS) 330f else 200f
+        val scale = min(width / 360f, height / drawingHeight)
         val saved = canvas.save()
-        canvas.translate((width - 360f * scale) / 2f, (height - 200f * scale) / 2f)
+        canvas.translate((width - 360f * scale) / 2f, (height - drawingHeight * scale) / 2f)
         canvas.scale(scale, scale)
         when (currentScene) {
             Scene.WELCOME -> {
@@ -70,12 +77,17 @@ internal class BrowserOnboardingArtView(
                 device(canvas, R.drawable.tesair_android, 112f, 0f, 248f, 200f)
                 badge(canvas, 247f, 126f, Symbol.SHIELD)
             }
+            Scene.ANDROID_BLUETOOTH -> {
+                device(canvas, R.drawable.tesair_android, 112f, 0f, 248f, 200f)
+                badge(canvas, 247f, 126f, Symbol.BLUETOOTH)
+            }
             Scene.IPHONE -> {
                 connector(canvas, 132f, 100f, 228f, 100f)
                 device(canvas, R.drawable.tesair_android, 20f, 4f, 147f, 195f)
                 device(canvas, R.drawable.tesair_iphone, 213f, 4f, 340f, 195f)
                 badge(canvas, 180f, 100f, Symbol.BLUETOOTH)
             }
+            Scene.IPHONE_SETTINGS -> iphoneSettings(canvas)
             Scene.TESLA_WIFI -> {
                 display(canvas)
                 badge(canvas, 324f, 36f, Symbol.WIFI)
@@ -96,6 +108,44 @@ internal class BrowserOnboardingArtView(
     }
 
     private fun display(canvas: Canvas) = device(canvas, R.drawable.tesair_display, 8f, 0f, 352f, 200f)
+
+    private fun iphoneSettings(canvas: Canvas) {
+        device(canvas, R.drawable.tesair_iphone, 72f, 0f, 288f, 322f)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(242, 242, 247)
+        canvas.drawRoundRect(114f, 15f, 247f, 303f, 19f, 19f, paint)
+        paint.color = Color.BLACK
+        canvas.drawRoundRect(153f, 25f, 207f, 38f, 7f, 7f, paint)
+        artText(canvas, "‹ ${context.getString(R.string.onboarding_iphone_settings_label)}", 122f, 60f, 11f, Color.rgb(0, 122, 255), 116f)
+        artText(canvas, context.getString(R.string.onboarding_iphone_bluetooth_label), 122f, 85f, 17f, Color.BLACK, 116f)
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(120f, 101f, 240f, 139f, 8f, 8f, paint)
+        artText(canvas, context.getString(R.string.onboarding_iphone_bluetooth_label), 127f, 125f, 11f, Color.BLACK, 76f)
+        paint.style = Paint.Style.FILL
+        paint.color = Color.rgb(52, 199, 89)
+        canvas.drawRoundRect(212f, 114f, 235f, 128f, 7f, 7f, paint)
+        paint.color = Color.WHITE
+        canvas.drawCircle(228f, 121f, 5.5f, paint)
+        artText(canvas, context.getString(R.string.onboarding_iphone_devices_label), 121f, 164f, 9f, Color.GRAY, 117f)
+        paint.color = Color.WHITE
+        canvas.drawRoundRect(120f, 174f, 240f, 213f, 8f, 8f, paint)
+        artText(canvas, pairingDeviceName ?: context.getString(R.string.onboarding_android_device),
+            127f, 198f, 11f, Color.BLACK, 106f)
+        paint.color = Color.BLACK
+        canvas.drawRoundRect(154f, 291f, 204f, 295f, 2f, 2f, paint)
+    }
+
+    private fun artText(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, maxWidth: Float? = null) {
+        paint.style = Paint.Style.FILL
+        paint.textSize = size
+        paint.color = color
+        var shown = value
+        if (maxWidth != null && paint.measureText(shown) > maxWidth) {
+            while (shown.isNotEmpty() && paint.measureText("$shown…") > maxWidth) shown = shown.dropLast(1)
+            shown += "…"
+        }
+        canvas.drawText(shown, x, y, paint)
+    }
 
     private fun device(canvas: Canvas, id: Int, left: Float, top: Float, right: Float, bottom: Float) {
         val bitmap = artwork.getValue(id)
@@ -156,8 +206,9 @@ internal class BrowserOnboardingArtView(
     private fun loadArtwork(scene: Scene): Map<Int, Bitmap> {
         val ids = when (scene) {
             Scene.WELCOME -> intArrayOf(R.drawable.tesair_android, R.drawable.tesair_iphone, R.drawable.tesair_display)
-            Scene.HOTSPOT, Scene.BACKGROUND -> intArrayOf(R.drawable.tesair_android)
+            Scene.HOTSPOT, Scene.BACKGROUND, Scene.ANDROID_BLUETOOTH -> intArrayOf(R.drawable.tesair_android)
             Scene.IPHONE -> intArrayOf(R.drawable.tesair_android, R.drawable.tesair_iphone)
+            Scene.IPHONE_SETTINGS -> intArrayOf(R.drawable.tesair_iphone)
             Scene.AUDIO -> intArrayOf(R.drawable.tesair_iphone, R.drawable.tesair_display)
             else -> intArrayOf(R.drawable.tesair_display)
         }

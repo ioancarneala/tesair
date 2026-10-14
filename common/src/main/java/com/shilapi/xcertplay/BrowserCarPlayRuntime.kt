@@ -4,6 +4,7 @@ import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.bluetooth.BluetoothManager
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.os.Build
@@ -66,6 +67,9 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         private set
     var setupNeedsAttention = false
         private set
+    val manualRecoveryPending: Boolean
+        get() = requested && !closed && !preparing && !retiring && activeSession == null &&
+            (setupNeedsAttention || retry != null)
 
     private val nightMode = CarPlayNightModeController(
         AndroidAmbientLight(this.context), MainThreadNightModeScheduler(), systemNight(),
@@ -164,6 +168,11 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             }) {
             setStatus(CarPlayStatus.Failed("Open connection setup to allow the required permissions."))
             scheduleRetry(null, "permissions_pending")
+            return
+        }
+        if (runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() == false) {
+            setStatus(CarPlayStatus.WaitingForPairedIphone)
+            scheduleRetry(null, "bluetooth_off")
             return
         }
         preparing = true

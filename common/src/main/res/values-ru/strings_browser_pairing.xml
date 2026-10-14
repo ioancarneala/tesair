@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_iphone_settings_label">Настройки</string>
+    <string name="onboarding_iphone_bluetooth_label">Bluetooth</string>
+    <string name="onboarding_iphone_devices_label">ДРУГИЕ УСТРОЙСТВА</string>
+    <string name="onboarding_bluetooth_enable_title">Включите Bluetooth.</string>
+    <string name="onboarding_bluetooth_enable_body">Этому телефону Android нужен Bluetooth для подключения iPhone.</string>
+    <string name="onboarding_bluetooth_enable_action">Включить Bluetooth</string>
+    <string name="onboarding_hotspot_off_title">Включите точку доступа.</string>
+    <string name="onboarding_hotspot_off_body">Включите её и отключите автоматическое выключение.</string>
+    <string name="onboarding_iphone_visible">Начать сопряжение</string>
+    <string name="onboarding_iphone_already_paired">Уже сопряжены? Выберите iPhone</string>
+    <string name="onboarding_iphone_pair_confirm">Подтвердите одинаковый код на обоих телефонах.</string>
+    <string name="onboarding_iphone_start_title">Подключите CarPlay.</string>
+    <string name="onboarding_iphone_start_body">iPhone подключится к точке доступа автоматически.</string>
+    <string name="onboarding_iphone_change">Сменить iPhone</string>
+    <string name="onboarding_iphone_select_title">Выберите iPhone.</string>
+    <string name="onboarding_iphone_select_body">Выберите iPhone, сопряжённый с этим телефоном Android.</string>
+    <string name="onboarding_iphone_pair_another">Сопрячь другой iPhone</string>
+</resources>

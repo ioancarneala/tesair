@@ -235,6 +235,67 @@ class BrowserServerRecoveryTest {
         assertNull(shadowOf(service.application).nextStartedActivity)
     }
 
+    @Test fun manualStartResumesAPausedReceiverOnlyOnceWithoutRestartingTheBrowser() {
+        configureReceiver()
+        BrowserSessionRecovery.markStarted(service)
+        `when`(output.running).thenReturn(true)
+        ReflectionHelpers.setField(service, "browserStarted", true)
+        var paused = true
+        `when`(runtime.setupNeedsAttention).thenAnswer { paused }
+        `when`(runtime.manualRecoveryPending).thenAnswer { paused }
+        doAnswer { paused = false; null }.`when`(runtime).reconnect()
+        val start = Intent(DiPlaySessionService.ACTION_RECOVER)
+            .putExtra(DiPlaySessionService.EXTRA_MANUAL_START, true)
+
+        repeat(2) { service.onStartCommand(start, 0, it + 1) }
+        completeAttempt()
+
+        verify(runtime, times(1)).reconnect()
+        verify(runtime, never()).start()
+        verify(output, never()).start()
+        assertTrue(BrowserSessionRecovery.requested(service))
+        assertNull(shadowOf(service.application).nextStartedActivity)
+    }
+
+    @Test fun automaticRecoveryAndActiveCarPlayDoNotClearAPausedConfigurationGate() {
+        configureReceiver()
+        BrowserSessionRecovery.markStarted(service)
+        `when`(output.running).thenReturn(true)
+        `when`(runtime.setupNeedsAttention).thenReturn(true)
+        `when`(runtime.manualRecoveryPending).thenReturn(true)
+        ReflectionHelpers.setField(service, "browserStarted", true)
+
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_RECOVER), 0, 1)
+        service.onStartCommand(null, 0, 2)
+        CarPlayBackgroundSession.active = true
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_RECOVER)
+            .putExtra(DiPlaySessionService.EXTRA_MANUAL_START, true), 0, 3)
+        completeAttempt()
+
+        verify(runtime, never()).reconnect()
+        verify(runtime, never()).start()
+        verify(output, never()).start()
+    }
+
+    @Test fun manualStartBypassesAScheduledRetryWithoutRestartingARunningAttempt() {
+        configureReceiver()
+        BrowserSessionRecovery.markStarted(service)
+        `when`(output.running).thenReturn(true)
+        ReflectionHelpers.setField(service, "browserStarted", true)
+        var pending = true
+        `when`(runtime.manualRecoveryPending).thenAnswer { pending }
+        doAnswer { pending = false; null }.`when`(runtime).reconnect()
+        val start = Intent(DiPlaySessionService.ACTION_RECOVER)
+            .putExtra(DiPlaySessionService.EXTRA_MANUAL_START, true)
+
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_RECOVER), 0, 1)
+        verify(runtime, never()).reconnect()
+        repeat(2) { service.onStartCommand(start, 0, it + 2) }
+
+        verify(runtime, times(1)).reconnect()
+        verify(output, never()).start()
+    }
+
     @Test fun staleSystemRestartAfterDisconnectDoesNotResurrectTheServerOrReceiver() {
         configureReceiver()
         service.onStartCommand(Intent(), 0, 1)

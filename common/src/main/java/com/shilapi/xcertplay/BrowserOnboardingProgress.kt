@@ -38,6 +38,11 @@ internal object BrowserOnboardingProgress {
     fun canFinish(iphoneActive: Boolean, videoRendered: Boolean, audioConfirmed: Boolean) =
         iphoneActive && videoRendered && audioConfirmed
 
+    fun newlyPairedIphone(baseline: Set<String>, bonded: List<Pair<String, Boolean>>, selected: String?): String? {
+        if (!selected.isNullOrBlank()) return null
+        return bonded.filter { it.first !in baseline }.singleOrNull()?.takeIf { it.second }?.first
+    }
+
     fun finish(context: Context, iphoneActive: Boolean, videoRendered: Boolean): Boolean {
         if (!canFinish(iphoneActive, videoRendered, audioConfirmed(context)) || !approvalsAllowed(context)) return false
         preferences(context).edit().putBoolean("completed", true).putString("step", Step.READY.name).apply()

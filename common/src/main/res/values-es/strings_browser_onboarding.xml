@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">Contraseña del punto de acceso</string>
     <string name="onboarding_network_password_hint">Déjalo vacío solo si la red es abierta</string>
     <string name="onboarding_network_settings">Abrir ajustes del punto de acceso</string>
-    <string name="onboarding_network_hint">Activa el punto de acceso. Mantén los datos móviles activados para tener internet en tu Tesla.</string>
+    <string name="onboarding_network_hint">Activa el punto de acceso y desactiva el apagado automático. Mantén los datos móviles activos para tener internet en tu Tesla.</string>
     <string name="onboarding_network_save">Guardar y continuar</string>
     <string name="onboarding_network_saved">Datos guardados. Mantén el punto de acceso activado.</string>
     <string name="onboarding_network_change">Usar el punto de acceso de este teléfono</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">Permitir uso en segundo plano</string>
     <string name="onboarding_done_label">Listo</string>
     <string name="onboarding_wait_label">Esperando…</string>
-    <string name="onboarding_iphone_title">Ahora, tu iPhone.</string>
-    <string name="onboarding_iphone_body">Activa Wi-Fi y Bluetooth. Enlázalo con este teléfono Android y selecciónalo abajo.</string>
+    <string name="onboarding_iphone_title">Enlaza tu iPhone.</string>
+    <string name="onboarding_iphone_body">Activa Wi-Fi y Bluetooth. Abre Ajustes → Bluetooth.</string>
     <string name="onboarding_iphone_choose">Seleccionar tu iPhone</string>
     <string name="onboarding_iphone_selected">Seleccionado: %1$s</string>
     <string name="onboarding_iphone_pair">Abrir ajustes de Bluetooth</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">Mostrar</string>
     <string name="onboarding_password_hide_short">Ocultar</string>
     <string name="onboarding_network_exact_hint">Usa el nombre y la contraseña exactos de los ajustes del punto de acceso.</string>
-    <string name="onboarding_bluetooth_name">Busca: %1$s</string>
+    <string name="onboarding_bluetooth_name">Toca %1$s en tu iPhone</string>
     <string name="onboarding_background_approved_title">Este teléfono está listo.</string>
     <string name="onboarding_background_approved_body">Ahora, conecta tu iPhone.</string>
 </resources>

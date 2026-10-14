@@ -1,6 +1,8 @@
 package com.shilapi.xcertplay
 
 import android.app.ActivityManager
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothManager
 import android.content.Context
 import android.os.Build
 import android.os.Looper
@@ -33,7 +35,7 @@ import org.robolectric.shadows.ShadowVpnService
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [29], qualifiers = "en-w393dp-h800dp")
+@Config(sdk = [29], qualifiers = "en-w393dp-h800dp", shadows = [OnboardingHotspotShadow::class])
 @LooperMode(LooperMode.Mode.PAUSED)
 class BrowserOnboardingTelemetryStartTest {
     private val app get() = RuntimeEnvironment.getApplication()
@@ -51,6 +53,11 @@ class BrowserOnboardingTelemetryStartTest {
         shadowOf(app).grantPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         shadowOf(app.getSystemService(PowerManager::class.java)).setIgnoringBatteryOptimizations(app.packageName, true)
         shadowOf(app.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(false)
+        shadowOf(app.getSystemService(BluetoothManager::class.java).adapter).setState(BluetoothAdapter.STATE_ON)
+        val paired = app.getSystemService(BluetoothManager::class.java).adapter.getRemoteDevice("00:11:22:33:44:55")
+        shadowOf(paired).setName("Example iPhone")
+        shadowOf(app.getSystemService(BluetoothManager::class.java).adapter).setBondedDevices(setOf(paired))
+        OnboardingHotspotShadow.apState = 13
         ShadowVpnService.setPrepareResult(null)
         engine.setEnabled(true)
         assertTrue(engine.awaitIdle())
@@ -68,8 +75,10 @@ class BrowserOnboardingTelemetryStartTest {
 
     @Test fun startingWithoutASelectedIphoneReportsABlockedStepInsteadOfAFictitiousReceiverSession() {
         assertTrue(BrowserOnboardingProgress.approvalsAllowed(app))
-        assertNull(DiPlayPreferences.phoneAddress(app))
+        DiPlayPreferences.savePhone(app, "00:11:22:33:44:55", "Example iPhone")
         val screen = open()
+        // A selection cleared after rendering must be rechecked before starting the receiver.
+        app.getSharedPreferences("diplay", 0).edit().remove("phone_address").commit()
         startButton(screen).performClick()
         shadowOf(Looper.getMainLooper()).idle()
         assertTrue(engine.awaitIdle())
@@ -82,6 +91,7 @@ class BrowserOnboardingTelemetryStartTest {
     }
 
     @Test fun revokedApprovalsAfterRenderingReportABlockWithoutCreatingAReceiverSession() {
+        DiPlayPreferences.savePhone(app, "00:11:22:33:44:55", "Example iPhone")
         val screen = open()
         shadowOf(app.getSystemService(PowerManager::class.java)).setIgnoringBatteryOptimizations(app.packageName, false)
         startButton(screen).performClick()

@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">Пароль точки доступа</string>
     <string name="onboarding_network_password_hint">Оставьте пустым только для открытой сети</string>
     <string name="onboarding_network_settings">Открыть настройки точки доступа</string>
-    <string name="onboarding_network_hint">Включите точку доступа. Оставьте мобильный интернет включённым, чтобы у Tesla был доступ в интернет.</string>
+    <string name="onboarding_network_hint">Включите точку доступа и отключите автоматическое выключение. Оставьте мобильные данные включёнными для интернета в Tesla.</string>
     <string name="onboarding_network_save">Сохранить и продолжить</string>
     <string name="onboarding_network_saved">Данные сохранены. Не выключайте точку доступа.</string>
     <string name="onboarding_network_change">Использовать точку доступа этого телефона</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">Разрешить работу в фоне</string>
     <string name="onboarding_done_label">Готово</string>
     <string name="onboarding_wait_label">Ожидание…</string>
-    <string name="onboarding_iphone_title">Теперь возьмите iPhone.</string>
-    <string name="onboarding_iphone_body">Включите Wi-Fi и Bluetooth. Создайте пару с этим телефоном Android, затем выберите iPhone ниже.</string>
+    <string name="onboarding_iphone_title">Сопрягите iPhone.</string>
+    <string name="onboarding_iphone_body">Включите Wi-Fi и Bluetooth. Откройте Настройки → Bluetooth.</string>
     <string name="onboarding_iphone_choose">Выбрать iPhone</string>
     <string name="onboarding_iphone_selected">Выбран: %1$s</string>
     <string name="onboarding_iphone_pair">Открыть настройки Bluetooth</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">Показать</string>
     <string name="onboarding_password_hide_short">Скрыть</string>
     <string name="onboarding_network_exact_hint">Введите имя и пароль точно как в настройках точки доступа.</string>
-    <string name="onboarding_bluetooth_name">Найдите: %1$s</string>
+    <string name="onboarding_bluetooth_name">Нажмите %1$s на iPhone</string>
     <string name="onboarding_background_approved_title">Этот телефон готов.</string>
     <string name="onboarding_background_approved_body">Теперь подключите iPhone.</string>
 </resources>

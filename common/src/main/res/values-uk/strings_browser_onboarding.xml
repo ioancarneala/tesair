@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">Пароль точки доступу</string>
     <string name="onboarding_network_password_hint">Залиште порожнім лише для відкритої мережі</string>
     <string name="onboarding_network_settings">Відкрити налаштування точки доступу</string>
-    <string name="onboarding_network_hint">Увімкніть точку доступу. Залиште мобільні дані ввімкненими, щоб Tesla мала доступ до інтернету.</string>
+    <string name="onboarding_network_hint">Увімкніть точку доступу та вимкніть автоматичне вимкнення. Залиште мобільні дані ввімкненими для інтернету в Tesla.</string>
     <string name="onboarding_network_save">Зберегти й продовжити</string>
     <string name="onboarding_network_saved">Дані збережено. Не вимикайте точку доступу.</string>
     <string name="onboarding_network_change">Використовувати точку доступу цього телефона</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">Дозволити роботу у фоні</string>
     <string name="onboarding_done_label">Готово</string>
     <string name="onboarding_wait_label">Очікування…</string>
-    <string name="onboarding_iphone_title">Тепер візьміть iPhone.</string>
-    <string name="onboarding_iphone_body">Увімкніть Wi-Fi і Bluetooth. Створіть пару з цим телефоном Android, а потім виберіть iPhone нижче.</string>
+    <string name="onboarding_iphone_title">Сполучіть iPhone.</string>
+    <string name="onboarding_iphone_body">Увімкніть Wi-Fi та Bluetooth. Відкрийте Параметри → Bluetooth.</string>
     <string name="onboarding_iphone_choose">Вибрати iPhone</string>
     <string name="onboarding_iphone_selected">Вибрано: %1$s</string>
     <string name="onboarding_iphone_pair">Відкрити налаштування Bluetooth</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">Показати</string>
     <string name="onboarding_password_hide_short">Приховати</string>
     <string name="onboarding_network_exact_hint">Введіть назву й пароль точно як у налаштуваннях точки доступу.</string>
-    <string name="onboarding_bluetooth_name">Знайдіть: %1$s</string>
+    <string name="onboarding_bluetooth_name">Натисніть %1$s на iPhone</string>
     <string name="onboarding_background_approved_title">Цей телефон готовий.</string>
     <string name="onboarding_background_approved_body">Тепер підключіть iPhone.</string>
 </resources>

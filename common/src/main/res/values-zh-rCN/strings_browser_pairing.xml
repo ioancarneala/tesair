@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_iphone_settings_label">设置</string>
+    <string name="onboarding_iphone_bluetooth_label">蓝牙</string>
+    <string name="onboarding_iphone_devices_label">其他设备</string>
+    <string name="onboarding_bluetooth_enable_title">打开蓝牙。</string>
+    <string name="onboarding_bluetooth_enable_body">这部安卓手机需要通过蓝牙连接 iPhone。</string>
+    <string name="onboarding_bluetooth_enable_action">打开蓝牙</string>
+    <string name="onboarding_hotspot_off_title">打开热点。</string>
+    <string name="onboarding_hotspot_off_body">打开热点并关闭自动关闭功能。</string>
+    <string name="onboarding_iphone_visible">开始配对</string>
+    <string name="onboarding_iphone_already_paired">已配对？选择你的 iPhone</string>
+    <string name="onboarding_iphone_pair_confirm">在两部手机上确认相同的配对码。</string>
+    <string name="onboarding_iphone_start_title">连接 CarPlay。</string>
+    <string name="onboarding_iphone_start_body">iPhone 将自动连接到热点。</string>
+    <string name="onboarding_iphone_change">更换 iPhone</string>
+    <string name="onboarding_iphone_select_title">选择你的 iPhone。</string>
+    <string name="onboarding_iphone_select_body">选择已与这部安卓手机配对的 iPhone。</string>
+    <string name="onboarding_iphone_pair_another">配对另一部 iPhone</string>
+</resources>

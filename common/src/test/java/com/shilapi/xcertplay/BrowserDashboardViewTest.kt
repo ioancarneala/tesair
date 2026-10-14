@@ -26,6 +26,8 @@ class BrowserDashboardViewTest {
             state(battery = false, hotspotNeedsAttention = true, bluetoothRequired = true,
                 route = false) to R.string.browser_battery_allow,
             state(hotspotNeedsAttention = true, bluetoothRequired = true, setupNeedsAttention = true,
+                receiverFailed = true, route = false, trustedUrl = null) to R.string.browser_next_open_bluetooth,
+            state(hotspotNeedsAttention = true, setupNeedsAttention = true,
                 receiverFailed = true, route = false, trustedUrl = null) to R.string.onboarding_network_settings,
             state(bluetoothRequired = true, setupNeedsAttention = true, receiverFailed = true,
                 route = false, trustedUrl = null) to R.string.browser_next_open_bluetooth,

@@ -39,9 +39,12 @@ AMD Ryzen infotainment.
 
 1. **Install TesAir on Android.** Open the app and follow its permission steps.
 2. **Turn on the Android hotspot.** Enter its name and password in TesAir once.
-3. **Connect the iPhone and Tesla to that hotspot.** Follow the iPhone connection
-   prompts. Pair the iPhone directly with Tesla Bluetooth for music and calls.
-4. **Open [go.tesair.co](https://go.tesair.co/) in the Tesla browser.** Bookmark it
+   Disable automatic hotspot shutoff in its settings if that option is available.
+3. **Pair your iPhone with the Android phone over Bluetooth.** Keep iPhone Wi-Fi
+   and Bluetooth on, then allow CarPlay. TesAir sends the hotspot details automatically.
+4. **Connect Tesla to the Android hotspot.** Pair the iPhone directly with Tesla
+   Bluetooth for music and calls.
+5. **Open [go.tesair.co](https://go.tesair.co/) in the Tesla browser.** Bookmark it
    for next time.
 
 The short address opens the phone's local HTTPS connection at

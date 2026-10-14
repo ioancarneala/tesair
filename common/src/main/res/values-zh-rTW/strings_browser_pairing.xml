@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_iphone_settings_label">設定</string>
+    <string name="onboarding_iphone_bluetooth_label">藍牙</string>
+    <string name="onboarding_iphone_devices_label">其他裝置</string>
+    <string name="onboarding_bluetooth_enable_title">開啟藍牙。</string>
+    <string name="onboarding_bluetooth_enable_body">這部 Android 手機需要透過藍牙連接 iPhone。</string>
+    <string name="onboarding_bluetooth_enable_action">開啟藍牙</string>
+    <string name="onboarding_hotspot_off_title">開啟熱點。</string>
+    <string name="onboarding_hotspot_off_body">開啟熱點並關閉自動關閉功能。</string>
+    <string name="onboarding_iphone_visible">開始配對</string>
+    <string name="onboarding_iphone_already_paired">已配對？選擇你的 iPhone</string>
+    <string name="onboarding_iphone_pair_confirm">在兩部手機上確認相同的配對碼。</string>
+    <string name="onboarding_iphone_start_title">連接 CarPlay。</string>
+    <string name="onboarding_iphone_start_body">iPhone 將自動連接到熱點。</string>
+    <string name="onboarding_iphone_change">更換 iPhone</string>
+    <string name="onboarding_iphone_select_title">選擇你的 iPhone。</string>
+    <string name="onboarding_iphone_select_body">選擇已與這部 Android 手機配對的 iPhone。</string>
+    <string name="onboarding_iphone_pair_another">配對另一部 iPhone</string>
+</resources>

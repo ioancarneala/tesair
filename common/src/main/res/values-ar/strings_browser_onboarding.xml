@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">كلمة مرور نقطة الاتصال</string>
     <string name="onboarding_network_password_hint">اتركها فارغة فقط إذا كانت الشبكة مفتوحة</string>
     <string name="onboarding_network_settings">فتح إعدادات نقطة الاتصال</string>
-    <string name="onboarding_network_hint">شغّل نقطة الاتصال. أبقِ بيانات الهاتف مفعّلة لتوفير الإنترنت في Tesla.</string>
+    <string name="onboarding_network_hint">شغّل نقطة الاتصال وأوقف الإيقاف التلقائي. أبقِ بيانات الهاتف مفعّلة للإنترنت في Tesla.</string>
     <string name="onboarding_network_save">حفظ ومتابعة</string>
     <string name="onboarding_network_saved">حُفظت البيانات. أبقِ نقطة الاتصال مفعّلة.</string>
     <string name="onboarding_network_change">استخدام نقطة اتصال هذا الهاتف بدلًا منها</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">السماح بالعمل في الخلفية</string>
     <string name="onboarding_done_label">تم</string>
     <string name="onboarding_wait_label">جارٍ الانتظار…</string>
-    <string name="onboarding_iphone_title">الآن، أحضر جهاز iPhone.</string>
-    <string name="onboarding_iphone_body">شغّل Wi-Fi وBluetooth. أقرنه بهاتف Android هذا، ثم اختره أدناه.</string>
+    <string name="onboarding_iphone_title">أقرن iPhone.</string>
+    <string name="onboarding_iphone_body">شغّل Wi-Fi وBluetooth. افتح الإعدادات → Bluetooth.</string>
     <string name="onboarding_iphone_choose">اختيار جهاز iPhone</string>
     <string name="onboarding_iphone_selected">الجهاز المحدد: %1$s</string>
     <string name="onboarding_iphone_pair">فتح إعدادات Bluetooth</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">إظهار</string>
     <string name="onboarding_password_hide_short">إخفاء</string>
     <string name="onboarding_network_exact_hint">استخدم الاسم وكلمة المرور تمامًا كما يظهران في إعدادات نقطة الاتصال.</string>
-    <string name="onboarding_bluetooth_name">ابحث عن: %1$s</string>
+    <string name="onboarding_bluetooth_name">اضغط على %1$s في iPhone</string>
     <string name="onboarding_background_approved_title">هذا الهاتف جاهز.</string>
     <string name="onboarding_background_approved_body">الآن، وصّل iPhone.</string>
 </resources>

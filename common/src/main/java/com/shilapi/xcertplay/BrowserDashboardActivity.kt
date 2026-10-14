@@ -297,6 +297,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     private fun hotspotNeedsAttention(): Boolean {
         if (CarPlayBackgroundSession.active ||
             AirPlayPersistence.loadWirelessHotspotMode(this) != WirelessHotspotMode.MANUAL) return false
+        if (CarHotspotStatus.isEnabled(this) == false) return true
         val failure = DiPlaySessionService.currentBrowserRuntime()?.status as? CarPlayStatus.Failed
         return failure?.startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION ||
             failure?.startupFailure == WirelessStartupFailure.HOTSPOT_NOT_READY

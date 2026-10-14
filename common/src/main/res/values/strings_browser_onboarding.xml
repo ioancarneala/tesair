@@ -22,7 +22,7 @@
     <string name="onboarding_network_password">Hotspot password</string>
     <string name="onboarding_network_password_hint">Leave empty only for an open hotspot</string>
     <string name="onboarding_network_settings">Open hotspot settings</string>
-    <string name="onboarding_network_hint">Turn the hotspot on. Keep mobile data on for internet in your Tesla.</string>
+    <string name="onboarding_network_hint">Turn the hotspot on and disable automatic shutoff. Keep mobile data on for internet in your Tesla.</string>
     <string name="onboarding_network_save">Save and continue</string>
     <string name="onboarding_network_saved">Details saved. Keep the hotspot on.</string>
     <string name="onboarding_network_change">Use this phone’s hotspot instead</string>
@@ -44,8 +44,8 @@
     <string name="onboarding_battery_action">Allow background use</string>
     <string name="onboarding_done_label">Done</string>
     <string name="onboarding_wait_label">Waiting…</string>
-    <string name="onboarding_iphone_title">Bring your iPhone.</string>
-    <string name="onboarding_iphone_body">Turn on Wi-Fi and Bluetooth. Pair it with this Android phone, then choose it below.</string>
+    <string name="onboarding_iphone_title">Pair your iPhone.</string>
+    <string name="onboarding_iphone_body">Turn on Wi-Fi and Bluetooth. Open Settings → Bluetooth.</string>
     <string name="onboarding_iphone_choose">Choose your iPhone</string>
     <string name="onboarding_iphone_selected">Selected: %1$s</string>
     <string name="onboarding_iphone_pair">Open Bluetooth settings</string>
@@ -91,7 +91,7 @@
     <string name="onboarding_password_show_short">Show</string>
     <string name="onboarding_password_hide_short">Hide</string>
     <string name="onboarding_network_exact_hint">Use the exact name and password from hotspot settings.</string>
-    <string name="onboarding_bluetooth_name">Look for: %1$s</string>
+    <string name="onboarding_bluetooth_name">Tap %1$s on your iPhone</string>
     <string name="onboarding_background_approved_title">This phone is ready.</string>
     <string name="onboarding_background_approved_body">Next, connect your iPhone.</string>
 </resources>
