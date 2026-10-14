@@ -409,7 +409,7 @@ class BrowserServerRecoveryTest {
         destroyed = true
         completeAttempt()
 
-        verify(runtime, times(1)).close()
+        verify(runtime, times(1)).close("service_stopped")
         assertNull(DiPlaySessionService.currentBrowserRuntime())
         assertTrue(BrowserSessionRecovery.canRecover(service))
     }
@@ -419,9 +419,9 @@ class BrowserServerRecoveryTest {
         `when`(output.running).thenReturn(true)
         var finishClose: (() -> Unit)? = null
         doAnswer { invocation ->
-            finishClose = invocation.getArgument(0)
+            finishClose = invocation.getArgument(1)
             null
-        }.`when`(runtime).close(any<() -> Unit>() ?: {})
+        }.`when`(runtime).close(eq("user_stop") ?: "", any<() -> Unit>() ?: {})
         start()
         completeAttempt()
         service.onStartCommand(Intent(DiPlaySessionService.ACTION_STOP), 0, 2)
@@ -452,9 +452,9 @@ class BrowserServerRecoveryTest {
         `when`(output.running).thenReturn(true)
         var finishClose: (() -> Unit)? = null
         doAnswer { invocation ->
-            if (finishClose == null) finishClose = invocation.getArgument(0)
+            if (finishClose == null) finishClose = invocation.getArgument(1)
             null
-        }.`when`(runtime).close(any<() -> Unit>() ?: {})
+        }.`when`(runtime).close(anyString() ?: "", any<() -> Unit>() ?: {})
         start()
         completeAttempt()
         service.onStartCommand(Intent(DiPlaySessionService.ACTION_STOP), 0, 2)

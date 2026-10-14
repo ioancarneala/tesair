@@ -216,9 +216,13 @@ class DiPlaySessionService : Service() {
 
     private fun retireBrowserReceiver() {
         if (receiverRetiring) return
-        val receiver = currentBrowserRuntime() ?: return
+        val receiver = currentBrowserRuntime()
+        if (receiver == null) {
+            BrowserTelemetry.sessionEnded(this, "user_stop")
+            return
+        }
         receiverRetiring = true
-        receiver.close {
+        receiver.close("user_stop") {
             synchronized(Companion) { if (runtime === receiver) runtime = null }
             receiverRetiring = false
             // A new Start can arrive before Android destroys this stopped Service. Wait for
@@ -324,7 +328,8 @@ class DiPlaySessionService : Service() {
             val output = synchronized(Companion) { browser.also { browser = null } }
             browserWorker.execute { output?.close() }
             val receiver = synchronized(Companion) { runtime.also { runtime = null } }
-            receiver?.close()
+            if (receiver != null) receiver.close(if (stopRequested) "user_stop" else "service_stopped")
+            else if (!stopRequested) BrowserTelemetry.sessionEnded(this, "service_stopped")
         }
         browserWorker.shutdown()
         super.onDestroy()

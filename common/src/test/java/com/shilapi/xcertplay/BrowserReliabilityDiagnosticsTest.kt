@@ -3,6 +3,8 @@ package com.shilapi.xcertplay
 import android.content.Context
 import android.content.ContextWrapper
 import com.shilapi.xcertplay.browser.BrowserAddressService
+import com.shilapi.xcertplay.browser.BrowserStreamOutput
+import org.json.JSONArray
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -12,6 +14,7 @@ import org.mockito.Mockito.`when`
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.util.ReflectionHelpers
 import java.io.File
 import java.net.InetAddress
 import java.net.NetworkInterface
@@ -90,6 +93,37 @@ class BrowserReliabilityDiagnosticsTest {
             val snapshot = BrowserReliabilityDiagnostics.snapshot(browserContext())
 
             assertTrue(snapshot, snapshot.contains("aliasPresent=false"))
+        }
+    }
+
+    @Test fun closedMonitorCannotEnqueueAnActiveSampleAfterTheTerminalState() {
+        val app = browserContext()
+        val telemetry = BrowserTelemetryEngine(app, online = { false })
+        BrowserTelemetry.replaceEngineForTest(app, telemetry)
+        val output = mock(BrowserStreamOutput::class.java)
+        `when`(output.running).thenReturn(true)
+        `when`(output.clientCount).thenReturn(1)
+        `when`(output.hasRenderedVideo).thenReturn(true)
+        ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", output)
+        telemetry.setEnabled(true)
+        val monitor = BrowserReliabilityMonitor(app)
+        try {
+            ReflectionHelpers.callInstanceMethod<Unit>(monitor, "sampleTelemetry")
+            monitor.close()
+            BrowserTelemetry.sessionEnded(app, "user_stop")
+            // A tick that reached sampling after close must not replace the terminal observation.
+            ReflectionHelpers.callInstanceMethod<Unit>(monitor, "sampleTelemetry")
+            assertTrue(telemetry.awaitIdle())
+            val stored = JSONArray(File(app.noBackupFilesDir, "telemetry/events.json").readText())
+            val events = (0 until stored.length()).map { stored.getJSONObject(it) }
+            assertTrue(events.any { it.getString("name") == "reliability_sample" &&
+                it.getJSONObject("attributes").getInt("browserCount") == 1 })
+            assertEquals("session_ended", events.last().getString("name"))
+            assertFalse(events.last().getJSONObject("attributes").getBoolean("receiverRunning"))
+        } finally {
+            monitor.close()
+            telemetry.shutdown()
+            ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", null)
         }
     }
 }

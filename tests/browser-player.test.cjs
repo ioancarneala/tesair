@@ -198,6 +198,71 @@ test('optional reporting exceptions never prevent picture drawing or frame ackno
   assert.ok(socket.sent.some(message => message.type === 'ack' && message.pts === 1));
   assert.equal(socket.readyState, 1);
 });
+test('decoder rejection reports the failing codec and encoded resolution without exception text', async () => {
+  const events = [];
+  const browser = await playingBrowser({telemetry: {event: (name, attributes) => events.push({name, attributes})}});
+  browser.decoders[0].callbacks.error({name: 'NotSupportedError', message: 'private browser detail'});
+  const error = events.find(event => event.name === 'browser_error');
+  assert.equal(error.attributes.reason, 'decoder_unsupported');
+  assert.equal(error.attributes.codec, 'avc1.42C01F');
+  assert.equal(error.attributes.width, 1920);
+  assert.equal(error.attributes.height, 1080);
+  assert.equal(JSON.stringify(events).includes('private browser detail'), false);
+});
+test('session rejection and an unopened socket report distinct bounded failure categories', async () => {
+  const events = [], telemetry = {event: (name, attributes) => events.push({name, attributes})};
+  const rejected = browserFixture([{ok: false, status: 503, text: async () => 'private phone detail'}], true, {}, {telemetry});
+  await rejected.settle();
+  assert.ok(events.some(event => event.name === 'browser_error' && event.attributes.reason === 'session_rejected'
+    && event.attributes.errorCode === '503'));
+  assert.equal(JSON.stringify(events).includes('private phone detail'), false);
+  const unopened = browserFixture([], true, {}, {telemetry}); await unopened.settle();
+  unopened.runTimer(10000);
+  assert.ok(events.some(event => event.name === 'browser_error' && event.attributes.reason === 'socket_open_timeout'));
+});
+test('a server error is reported even when its notice leaves the picture visible', async () => {
+  const events = [];
+  const browser = await playingBrowser({telemetry: {event: (name, attributes) => events.push({name, attributes})}});
+  browser.sockets[0].onmessage({data: JSON.stringify({type: 'error', message: 'private phone detail'})});
+  const error = events.find(event => event.name === 'browser_error');
+  assert.equal(error.attributes.reason, 'server_error');
+  assert.equal(error.attributes.width, 1920);
+  assert.equal(JSON.stringify(events).includes('private phone detail'), false);
+  assert.equal(browser.elements.get('panel').hidden, true);
+});
+test('sparse static video does not flood reports with invented recoveries', async () => {
+  const events = [];
+  const browser = await playingBrowser({telemetry: {event: (name, attributes) => events.push({name, attributes})}});
+  for (let i = 0; i < 12; i++) {
+    browser.sockets[0].onmessage({data: JSON.stringify({type: 'pong'})});
+    browser.tick(3000);
+    browser.decoders[0].callbacks.output({timestamp: i + 2, close() {}});
+  }
+  assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 1);
+  assert.equal(events.filter(event => event.name === 'recovery_completed').length, 0);
+  assert.equal(events.filter(event => event.name === 'browser_error').length, 0);
+});
+test('a new actual draw resolves a reported playback fault on the same browser', async () => {
+  const events = [];
+  const browser = await playingBrowser({telemetry: {event: (name, attributes) => events.push({name, attributes})}});
+  browser.sockets[0].onerror();
+  assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 1);
+  browser.decoders[0].callbacks.output({timestamp: 2, close() {}});
+  const frames = events.filter(event => event.name === 'browser_first_frame');
+  assert.equal(frames.length, 2);
+  assert.equal(frames[1].attributes.source, 'recovery');
+  assert.equal(frames[1].attributes.sampleDecoded, true);
+  browser.decoders[0].callbacks.output({timestamp: 3, close() {}});
+  assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 2);
+});
+test('enabling reports waits for a real draw instead of timestamping an old picture as new', async () => {
+  const events = [];
+  const browser = await playingBrowser({telemetry: {event: (name, attributes) => events.push({name, attributes})}});
+  browser.sockets[0].onmessage({data: JSON.stringify({type: 'telemetry_consent', enabled: true})});
+  assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 1);
+  browser.decoders[0].callbacks.output({timestamp: 2, close() {}});
+  assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 2);
+});
 test('playing has no controls or live status announcements and follows browser fullscreen changes', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0];
   const lastStatus = browser.elements.get('status').textContent;

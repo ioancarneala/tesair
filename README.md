@@ -6,10 +6,10 @@ Your iPhone apps on the Tesla screen, with sharp video, responsive touch and sou
 through the car's speakers. Install TesAir on Android and open **go.tesair.co** in
 the Tesla browser.
 
-[**Download TesAir v1.0.4**](https://github.com/ioancarneala/tesair/releases/download/v1.0.4/TesAir-v1.0.4.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
+[**Download TesAir v1.0.5**](https://github.com/ioancarneala/tesair/releases/download/v1.0.5/TesAir-v1.0.5.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
 
-**New in v1.0.4:** clearer first-time setup, an illustrated iPhone pairing guide
-and updates you can download from the app.
+Clear first-time setup, an illustrated iPhone pairing guide and updates you can
+download from the app. **New in v1.0.5:** more accurate optional connection reports.
 
 Used daily in a **Tesla Model 3 Highland (HW4)**, with smooth **60 fps** video and
 a stable connection. Tested Android phones: **OnePlus 7T Pro**

@@ -38,6 +38,8 @@
   let displayTimer, lastDisplay = '', decodeError = '';
   let sessionRequest, connectionAttempt = 0, socketTimer, leaving = false;
   let receivedVideo = false, recoveryRequested = false, unsupportedVideo = false;
+  let reportedPlaybackProblem = false;
+  let reportNextDraw = false;
   let waitingForVideo = false, pendingDiagnostic = null;
   let viewArea = null, pendingViewArea = null;
   const frameArrivals = new Map();
@@ -47,6 +49,13 @@
   function telemetry(name, attributes = {}) {
     try { if (root.TesAirTelemetry) root.TesAirTelemetry.event(name, attributes); }
     catch (_) { /* Optional reporting cannot interrupt video or its acknowledgements. */ }
+  }
+  function videoContext() {
+    return config ? {codec: config.codec, width: config.codedWidth, height: config.codedHeight} : {};
+  }
+  function playbackProblem(reason, attributes = {}) {
+    reportedPlaybackProblem = true;
+    telemetry('browser_error', {...videoContext(), ...attributes, reason, result: 'failed'});
   }
   function send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function diagnostic(event, closeCode = 0, timings = {}) {
@@ -58,9 +67,8 @@
     else pendingDiagnostic = message;
     if (['decoder_error', 'decoder_unsupported', 'decode_backpressure', 'transport_timeout',
       'decoder_timeout', 'socket_error', 'packet_error'].includes(event))
-      telemetry('browser_error', {reason: event, errorCode: String(closeCode), queueDepth: message.decodeQueue, result: 'failed'});
+      playbackProblem(event, {errorCode: String(closeCode), queueDepth: message.decodeQueue});
     else if (event === 'page_exit') telemetry('browser_disconnected', {reason: 'page_exit', result: 'normal'});
-    else if (event === 'video_resumed') telemetry('recovery_completed', {source: 'browser', result: 'confirmed'});
   }
   function resetVideoTiming() {
     frameArrivals.clear();
@@ -149,7 +157,10 @@
         try {
           context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
           metricDrawn++;
-          if (!receivedVideo) telemetry('browser_first_frame', {sampleDecoded: true, width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
+          if (!receivedVideo || reportedPlaybackProblem || reportNextDraw) telemetry('browser_first_frame', {
+            ...videoContext(), source: reportedPlaybackProblem ? 'recovery' : 'first_draw', sampleDecoded: true,
+            width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
+          reportedPlaybackProblem = reportNextDraw = false;
           // Decode includes browser queueing; draw measures submission, not physical presentation.
           if (receivedAt !== undefined && timingSamples < 10000) {
             const decodeMs = Math.max(0, outputAt - receivedAt), drawMs = Math.max(0, performance.now() - outputAt);
@@ -245,16 +256,21 @@
       reconnectCount ? 'Your display will return automatically.' : 'Your display will appear automatically.');
     $('retry').disabled = true;
     const request = new AbortController(); sessionRequest = request;
+    let responseCode = 0;
     const timeout = setTimeout(() => request.abort(), 8000);
     try {
       const response = await fetch('/session', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
         headers: { 'Content-Type': 'application/json' }, body: '{}', signal: request.signal });
+      responseCode = response.status || 0;
       if (!response.ok) throw new Error((await response.text()).trim().slice(0, 240) || `Phone returned ${response.status}.`);
       if (attempt !== connectionAttempt || leaving) return;
       socket = new WebSocket(`wss://${location.host}/stream`); socket.binaryType = 'arraybuffer';
       const current = socket;
       socketTimer = setTimeout(() => {
-        if (current === socket && current.readyState !== WebSocket.OPEN) reconnect('The phone stream did not open in time.');
+        if (current === socket && current.readyState !== WebSocket.OPEN) {
+          playbackProblem('socket_open_timeout');
+          reconnect('The phone stream did not open in time.');
+        }
       }, 10000);
       current.onopen = () => {
         telemetry('browser_connected', {automatic: reconnectCount > 0});
@@ -279,6 +295,7 @@
               const area = parseViewArea(payload);
               if (area) { pendingViewArea = area; applyViewArea(); }
             } else if ((payload.type === 'status' || payload.type === 'error') && typeof payload.message === 'string') {
+              if (payload.type === 'error') playbackProblem('server_error');
               status(payload.message);
               if (!$('panel').hidden) {
                 if (payload.type === 'error') connectionPresentation('Check your phone', '', true, payload.message);
@@ -286,7 +303,8 @@
               }
             } else if (payload.type === 'telemetry_consent') {
               try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
-              if (payload.enabled && receivedVideo) telemetry('browser_first_frame', {source: 'already_drawn', sampleDecoded: true});
+              // Report the next actual draw, never relabel an old picture as a fresh frame.
+              reportNextDraw = payload.enabled === true;
             }
             return;
           }
@@ -307,14 +325,19 @@
         }
       };
       current.onclose = event => {
-        telemetry('browser_disconnected', {errorCode: String(event.code || 0), reason: leaving ? 'page_exit' : 'socket_closed'});
+        const normal = leaving || event.code === 1000 || event.code === 1001;
+        telemetry('browser_disconnected', {errorCode: String(event.code || 0),
+          reason: leaving ? 'page_exit' : 'socket_closed', result: normal ? 'normal' : 'failed'});
         diagnostic('socket_closed', event.code);
         reconnect(event.reason || decodeError || 'Connection interrupted. Check that the phone hotspot is connected.');
       };
       current.onerror = () => { diagnostic('socket_error'); status('Connection unavailable'); };
     } catch (error) {
-      if (attempt === connectionAttempt && !leaving)
+      if (attempt === connectionAttempt && !leaving) {
+        playbackProblem(error.name === 'AbortError' ? 'session_timeout' : responseCode ? 'session_rejected' : 'session_unreachable',
+          {errorCode: String(responseCode)});
         reconnect(error.name === 'AbortError' ? 'The phone did not respond in time.' : error.message || 'Phone not reachable.');
+      }
     } finally { clearTimeout(timeout); if (sessionRequest === request) sessionRequest = null; }
   }
   $('retry').onclick = () => { reconnectCount = 0; decodeError = ''; unsupportedVideo = false; connect(); };

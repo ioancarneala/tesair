@@ -21,6 +21,7 @@ import com.shilapi.xcertplay.transport.VehicleStatusProvider
 import java.io.File
 import java.time.Duration
 import java.util.concurrent.ExecutorService
+import org.json.JSONArray
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -384,6 +385,30 @@ class BrowserCarPlayRuntimeTest {
         verify(sink, times(1)).close()
         listener().onTransportError("late interruption")
         assertNull(get<Runnable?>("retry"))
+    }
+
+    @Test fun explicitStopReportsOneTerminalStateWithoutMisclassifyingLateTransportCallbacks() {
+        val telemetry = BrowserTelemetryEngine(context, online = { false })
+        BrowserTelemetry.replaceEngineForTest(context, telemetry)
+        try {
+            telemetry.setEnabled(true)
+            val current = listener()
+            current.onSessionActive(mock(AirPlaySession::class.java))
+            runtime.close("user_stop")
+            current.onTransportError("late teardown transport error")
+            current.onSessionEnded(mock(AirPlaySession::class.java))
+            runtime.close("service_stopped")
+            assertTrue(telemetry.awaitIdle())
+            val stored = JSONArray(File(context.noBackupFilesDir, "telemetry/events.json").readText())
+            val events = (0 until stored.length()).map { stored.getJSONObject(it) }
+            val terminal = events.single { it.getString("name") == "session_ended" }.getJSONObject("attributes")
+            assertEquals("user_stop", terminal.getString("reason"))
+            assertFalse(terminal.getBoolean("receiverRunning"))
+            assertFalse(terminal.getBoolean("iphoneActive"))
+            assertFalse(terminal.getBoolean("videoRendered"))
+            assertEquals(0, terminal.getInt("browserCount"))
+            assertTrue(events.none { it.getString("name") == "iphone_disconnected" })
+        } finally { telemetry.shutdown() }
     }
 
     @Test fun oldRuntimeTeardownDoesNotClearTheNewOwnersSession() {

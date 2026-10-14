@@ -127,7 +127,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         restart()
     }
 
-    fun close(completion: () -> Unit = {}) = onMain {
+    fun close(reason: String = "receiver_closed", completion: () -> Unit = {}) = onMain {
         if (closeCompleted) { completion(); return@onMain }
         closeWaiters += completion
         if (closed) return@onMain
@@ -143,7 +143,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         nightMode.pause()
         commands.shutdown()
         record("receiver_close")
-        BrowserTelemetry.record(context, "session_ended", mapOf("reason" to "receiver_closed"))
+        BrowserTelemetry.sessionEnded(context, reason)
         retire { finishClose() }
     }
 
@@ -250,7 +250,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
                 onMain {
                     BrowserSessionRecovery.markStopped(context)
                     context.stopService(Intent(context, DiPlaySessionService::class.java))
-                    close(completion)
+                    close(completion = completion)
                 }
             }
             output.setViewArea(prepared.layout.currentArea, prepared.layout.canvasWidth, prepared.layout.canvasHeight)

@@ -106,9 +106,10 @@ internal object BrowserReliabilityDiagnostics {
                 "wifi" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true),
                 "cellular" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true),
                 "receiverRunning" to (output?.running == true), "browserCount" to (output?.clientCount ?: 0),
+                // This confirms a frame in the current media generation, not continuous live playback.
                 "iphoneActive" to CarPlayBackgroundSession.active, "videoRendered" to (output?.hasRenderedVideo == true),
             ))
-            // The existing health tick also records parked battery state. Upload only during use.
+            // Operational changes flush in the collector; use the existing tick for other pending reports during use.
             if (active) BrowserTelemetry.pump(context)
         }
     }
@@ -162,7 +163,7 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
             if (!closed.get()) {
                 BrowserReliabilityDiagnostics.record(app, BrowserReliabilityDiagnostics.snapshot(app))
                 BrowserAutomaticReport.save(app)
-                BrowserReliabilityDiagnostics.telemetrySample(app)
+                sampleTelemetry()
             }
         }, 0, 60, TimeUnit.SECONDS)
         worker.scheduleWithFixedDelay({
@@ -175,8 +176,13 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
         BrowserReliabilityDiagnostics.record(app, event)
     }
 
+    private fun sampleTelemetry() = synchronized(closed) {
+        // Finish an in-flight enqueue before service teardown records its terminal state.
+        if (!closed.get()) BrowserReliabilityDiagnostics.telemetrySample(app)
+    }
+
     override fun close() {
-        if (!closed.compareAndSet(false, true)) return
+        synchronized(closed) { if (!closed.compareAndSet(false, true)) return }
         BrowserScreenOffCheck.stop()
         if (callbackRegistered) runCatching { connectivity?.unregisterNetworkCallback(callback) }
         if (receiverRegistered) runCatching { app.unregisterReceiver(receiver) }

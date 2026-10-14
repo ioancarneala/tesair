@@ -41,6 +41,11 @@ object BrowserTelemetry {
     @JvmStatic fun setEnabled(context: Context, enabled: Boolean) = engine(context).setEnabled(enabled)
     @JvmStatic fun pump(context: Context) = engine(context).pump()
 
+    internal fun sessionEnded(context: Context, reason: String) = record(context, "session_ended", mapOf(
+        "reason" to reason, "receiverRunning" to false, "iphoneActive" to false,
+        "browserCount" to 0, "videoRendered" to false,
+    ))
+
     /** False means deletion is retained privately for retry when the device is online. */
     @JvmStatic fun deleteData(context: Context, callback: (Boolean) -> Unit) = engine(context).deleteData(callback)
 
@@ -76,6 +81,7 @@ internal class BrowserTelemetryEngine(
     private var registered = false
     private var opened = false
     private val samples = mutableMapOf<String, Long>()
+    private val reliabilityState = mutableMapOf<String, Any?>()
     private val baseMetadata by lazy(::metadata)
     private var batchLimit = BrowserTelemetryStore.MAX_BATCH_EVENTS
     private var serverTimeAnchor: Long? = null
@@ -99,6 +105,8 @@ internal class BrowserTelemetryEngine(
         worker.execute {
             try {
                 if (!enabled.get() || generation != consentGeneration.get()) return@execute
+                val state = if (name == "reliability_sample") clean.filterKeys { it in RELIABILITY_STATE_KEYS } else emptyMap()
+                val stateChanged = state.any { (key, value) -> reliabilityState[key] != value }
                 if (name == "performance_summary" || name == "reliability_sample") {
                     val active = clean["iphoneActive"] == true || (clean["browserCount"] as? Number)?.toInt()?.let { it > 0 } == true
                     val minimum = if (name == "reliability_sample") {
@@ -106,9 +114,10 @@ internal class BrowserTelemetryEngine(
                     } else 60_000L
                     val key = if (name == "reliability_sample") "$name:${if (active) "active" else "idle"}" else name
                     val previous = samples[key]
-                    if (previous != null && elapsed - previous in 0 until minimum) return@execute
+                    if (!stateChanged && previous != null && elapsed - previous in 0 until minimum) return@execute
                     samples[key] = elapsed
                 }
+                reliabilityState.putAll(state)
                 ensureIdentity()
                 if (name == "receiver_start_requested" && sessionId == null) {
                     sessionId = UUID.randomUUID().toString()
@@ -118,8 +127,11 @@ internal class BrowserTelemetryEngine(
                     append(name, time, elapsed, metadata() + clean)
                     if (!opened) { opened = true; configurationSnapshot(time, elapsed) }
                 } else append(name, time, elapsed, clean)
-                if (name == "session_ended") sessionId = null
-                if (name in FINAL_UPLOAD_EVENTS) upload(force = true)
+                if (name == "session_ended") {
+                    sessionId = null
+                    reliabilityState.putAll(clean.filterKeys { it in RELIABILITY_STATE_KEYS })
+                }
+                if (stateChanged || name in IMMEDIATE_UPLOAD_EVENTS) upload(force = true)
             } catch (_: Exception) {
                 // A reporting or storage failure must never escape into the receiver process.
             } finally { pendingRecords.decrementAndGet() }
@@ -137,7 +149,7 @@ internal class BrowserTelemetryEngine(
             if (value && enabled.get() && generation == consentGeneration.get()) {
                 if (!previous) {
                     // Withdrawal may have been followed by process death before its worker cleared disk.
-                    store.clear(); sessionId = null; opened = false; samples.clear()
+                    store.clear(); sessionId = null; opened = false; samples.clear(); reliabilityState.clear()
                 }
                 ensureIdentity()
                 if (!previous) {
@@ -157,6 +169,7 @@ internal class BrowserTelemetryEngine(
                 sessionId = null
                 opened = false
                 samples.clear()
+                reliabilityState.clear()
             }
         }
     }
@@ -313,7 +326,7 @@ internal class BrowserTelemetryEngine(
         preferences.edit().apply {
             if (pending.length() > 0) putString("pendingDeletion", pending.toString()) else remove("pendingDeletion")
         }.remove("installationId").remove("token").remove("deletionRequested").commit()
-        registered = false; sessionId = null; opened = false; samples.clear()
+        registered = false; sessionId = null; opened = false; samples.clear(); reliabilityState.clear()
         nextAttemptElapsedMs = 0L; failures = 0; batchLimit = BrowserTelemetryStore.MAX_BATCH_EVENTS
         store.clear()
     }
@@ -344,7 +357,13 @@ internal class BrowserTelemetryEngine(
     companion object {
         private const val MAX_PENDING_RECORDS = 256
         private const val MIN_UPLOAD_INTERVAL_MS = 5 * 60_000L
-        private val FINAL_UPLOAD_EVENTS = setOf("app_backgrounded", "browser_error", "receiver_start_failed")
+        private val IMMEDIATE_UPLOAD_EVENTS = setOf("app_backgrounded", "browser_error", "receiver_start_failed",
+            "receiver_start_requested", "receiver_started", "session_ended", "iphone_connected", "iphone_disconnected",
+            "browser_connected", "browser_disconnected", "browser_first_frame", "recovery_completed")
+        // Battery percentage changes stay on the sparse sampling cadence; operational transitions do not.
+        private val RELIABILITY_STATE_KEYS = setOf("receiverRunning", "iphoneActive", "browserCount", "videoRendered",
+            "charging", "thermalStatus", "screenOn", "idle", "powerSave", "batteryExempt", "lowMemory",
+            "uplink", "validated", "wifi", "cellular", "bluetooth")
     }
 }
 

@@ -301,10 +301,9 @@ class BrowserTelemetryTest {
         assertEquals(0, queue().length())
     }
 
-    @Test fun idleHealthSamplesAreSparseAndDoNotSuppressTheFirstActiveSample() {
+    @Test fun unchangedHealthSamplesStaySparseButBothActivityTransitionsAreRecorded() {
         engine.setEnabled(true)
         assertTrue(engine.awaitIdle())
-        online = true
         engine.record("reliability_sample", mapOf("iphoneActive" to false, "browserCount" to 0))
         assertTrue(engine.awaitIdle())
         elapsed += 5 * 60_000L + 1
@@ -321,8 +320,63 @@ class BrowserTelemetryTest {
         val all = queue()
         val health = (0 until all.length()).map { all.getJSONObject(it) }.filter { it.getString("name") == "reliability_sample" }
         assertEquals(2, health.count { it.getJSONObject("attributes").getBoolean("iphoneActive") })
-        assertEquals(2, health.count { !it.getJSONObject("attributes").getBoolean("iphoneActive") })
+        assertEquals(3, health.count { !it.getJSONObject("attributes").getBoolean("iphoneActive") })
         assertTrue(transport.calls.isEmpty())
+    }
+
+    @Test fun connectionAndStopTransitionsUploadDuringSuccessfulCooldownWithoutAHealthTimer() {
+        online = true
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val transitions = listOf("receiver_start_requested", "receiver_started", "iphone_connected",
+            "browser_connected", "browser_first_frame", "browser_disconnected", "iphone_disconnected", "session_ended")
+        transitions.forEach { name ->
+            val before = transport.calls.count { it.path == "/v1/events" }
+            engine.record(name, if (name == "session_ended") mapOf("reason" to "user_stop",
+                "receiverRunning" to false, "iphoneActive" to false, "browserCount" to 0, "videoRendered" to false) else emptyMap())
+            assertTrue(engine.awaitIdle())
+            assertEquals(name, before + 1, transport.calls.count { it.path == "/v1/events" })
+            val sent = JSONObject(transport.calls.last().body!!).getJSONArray("events")
+            assertEquals(name, sent.getJSONObject(sent.length() - 1).getString("name"))
+        }
+        assertEquals(0, queue().length())
+    }
+
+    @Test fun changedOperationalStateUploadsImmediatelyIncludingReturningToIdle() {
+        online = true
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val idle = mapOf("receiverRunning" to true, "iphoneActive" to false, "browserCount" to 0,
+            "videoRendered" to false, "charging" to false, "batteryPercent" to 70)
+        engine.record("reliability_sample", idle)
+        assertTrue(engine.awaitIdle())
+        val initialUploads = transport.calls.count { it.path == "/v1/events" }
+        repeat(20) { engine.record("reliability_sample", idle + ("batteryPercent" to 69)) }
+        assertTrue(engine.awaitIdle())
+        assertEquals(initialUploads, transport.calls.count { it.path == "/v1/events" })
+        engine.record("reliability_sample", idle + mapOf("iphoneActive" to true, "browserCount" to 1))
+        engine.record("reliability_sample", idle)
+        assertTrue(engine.awaitIdle())
+        assertEquals(initialUploads + 2, transport.calls.count { it.path == "/v1/events" })
+        val finalState = JSONObject(transport.calls.last().body!!).getJSONArray("events").getJSONObject(0).getJSONObject("attributes")
+        assertFalse(finalState.getBoolean("iphoneActive"))
+        assertEquals(0, finalState.getInt("browserCount"))
+    }
+
+    @Test fun operationalTransitionsAndStopDoNotBypassFailedNetworkBackoff() {
+        online = true
+        transport.status = 503
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val initialCalls = transport.calls.size
+        engine.record("iphone_connected")
+        engine.record("browser_first_frame")
+        engine.record("reliability_sample", mapOf("iphoneActive" to true, "browserCount" to 1))
+        engine.record("reliability_sample", mapOf("iphoneActive" to false, "browserCount" to 0))
+        engine.record("session_ended", mapOf("reason" to "user_stop"))
+        assertTrue(engine.awaitIdle())
+        assertEquals(initialCalls, transport.calls.size)
+        assertEquals("session_ended", queue().getJSONObject(queue().length() - 1).getString("name"))
     }
 
     @Test fun enrollmentServerDateCorrectsSkewedEventTimesWithoutChangingEventIds() {
