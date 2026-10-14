@@ -99,6 +99,7 @@ function browserFixture(responses = [], videoSupported = true, decoderOptions = 
     visualViewport: eventTarget(),
     VideoDecoder: videoSupported ? VideoDecoder : undefined};
   if (options.rawInput) window.onpointerrawupdate = null;
+  if (options.telemetry) window.TesAirTelemetry = options.telemetry;
   if (options.animationFrames !== false) {
     window.requestAnimationFrame = callback => { const id = ++nextTimer; animations.set(id, callback); return id; };
     window.cancelAnimationFrame = id => animations.delete(id);
@@ -186,6 +187,16 @@ test('server notices never overlay a playing picture', async () => {
   assert.equal(browser.elements.get('screen').hidden, false);
   assert.equal(browser.elements.has('message'), false);
   assert.equal(browser.decoders[0].state, 'configured'); assert.equal(socket.readyState, 1);
+});
+test('optional reporting exceptions never prevent picture drawing or frame acknowledgement', async () => {
+  const browser = browserFixture([], true, {}, {telemetry: {event() { throw new Error('Reporting unavailable'); }}});
+  await browser.settle();
+  const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
+  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
+  browser.decoders[0].callbacks.output({timestamp: 1, close() {}});
+  assert.equal(browser.elements.get('panel').hidden, true);
+  assert.ok(socket.sent.some(message => message.type === 'ack' && message.pts === 1));
+  assert.equal(socket.readyState, 1);
 });
 test('playing has no controls or live status announcements and follows browser fullscreen changes', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0];

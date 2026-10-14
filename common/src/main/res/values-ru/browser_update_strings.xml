@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_update_title">Обновления</string>
+    <string name="browser_update_back">Назад</string>
+    <string name="browser_update_channel">Обновления приложения</string>
+    <string name="browser_update_available">Доступна версия TesAir %1$s</string>
+    <string name="browser_update_notification">Откройте TesAir, чтобы скачать обновление.</string>
+    <string name="browser_update_ready">Скачайте новую версию. Android попросит подтвердить установку.</string>
+    <string name="browser_update_checking">Проверка обновлений…</string>
+    <string name="browser_update_current">У вас последняя версия.</string>
+    <string name="browser_update_offline">Не удалось проверить обновления. Подключитесь к интернету и повторите попытку.</string>
+    <string name="browser_update_offline_available">Обновление было найдено ранее. Подключитесь к интернету, чтобы скачать его.</string>
+    <string name="browser_update_download">Скачать обновление</string>
+    <string name="browser_update_install">Установить обновление</string>
+    <string name="browser_update_check">Проверить снова</string>
+    <string name="browser_update_keeps_settings">Ваши настройки сохранятся.</string>
+    <string name="browser_update_downloading">Загрузка…</string>
+    <string name="browser_update_downloaded">Готово к установке.</string>
+    <string name="browser_update_verifying">Проверка обновления…</string>
+    <string name="browser_update_download_failed">Не удалось скачать или проверить обновление. Повторите попытку.</string>
+    <string name="browser_update_carplay_active">Завершите сеанс CarPlay перед установкой обновления.</string>
+    <string name="browser_update_source_required">Разрешите установку обновлений из TesAir в настройках Android, затем нажмите Установить обновление.</string>
+    <string name="browser_update_confirm_android">Подтвердите обновление в Android. Можно установить его позже.</string>
+    <string name="browser_update_install_failed">Android не смог открыть установщик. Повторите попытку.</string>
+</resources>

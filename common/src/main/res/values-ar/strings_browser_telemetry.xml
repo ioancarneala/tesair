@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_telemetry_title">ساعد في تحسين TesAir</string>
+    <string name="browser_telemetry_description">شارك بيانات تقنية عن الإعداد والاتصالات والأداء. المشاركة اختيارية ويمكن إيقافها في الإعدادات.</string>
+    <string name="browser_telemetry_content_private">لا صور أو صوت أو رسائل أو مواقع أو تفاصيل Wi-Fi من CarPlay. تستخدم التقارير معرّف تثبيت عشوائيًا وتُحفظ لمدة 30 يومًا.</string>
+    <string name="browser_telemetry_participate">مشاركة</string>
+    <string name="browser_telemetry_decline">عدم الإرسال</string>
+    <string name="browser_telemetry_settings">الاستخدام والتشخيص</string>
+    <string name="browser_telemetry_enabled">تتم مشاركة التقارير التقنية</string>
+    <string name="browser_telemetry_disabled">التقارير التقنية متوقفة</string>
+    <string name="browser_telemetry_change">تغيير المشاركة</string>
+    <string name="browser_telemetry_delete">حذف التقارير المشتركة</string>
+    <string name="browser_telemetry_delete_title">حذف تقاريرك؟</string>
+    <string name="browser_telemetry_delete_body">سيتوقف إرسال التقارير. ستُحذف التقارير المشتركة ومعرّف التثبيت. ستبقى إعدادات CarPlay محفوظة.</string>
+    <string name="browser_telemetry_deleted">تم حذف التقارير. إعدادات CarPlay محفوظة.</string>
+    <string name="browser_telemetry_delete_pending">التقارير متوقفة. سيكتمل الحذف عند اتصال هذا الهاتف بالإنترنت وتشغيل TesAir مجددًا.</string>
+    <string name="browser_telemetry_support_id">معرّف الدعم: %1$s</string>
+    <string name="browser_telemetry_feedback">الإبلاغ عن مشكلة في الإعداد</string>
+    <string name="browser_telemetry_feedback_title">في أي خطوة توقفت؟</string>
+    <string name="browser_telemetry_feedback_sent">شكرًا. تم حفظ ملاحظاتك التقنية.</string>
+    <string name="browser_telemetry_privacy">البيانات التي تتم مشاركتها</string>
+    <string name="browser_telemetry_privacy_body">بإذنك، يرسل TesAir خطوات الإعداد ونتائج الأذونات وإصدارات التطبيق والجهاز وإعدادات الفيديو ونتائج الاتصال ومؤشرات الأداء إلى telemetry.tesair.co.\n\nلا تحتوي التقارير على محتوى الشاشة أو الصوت أو المسارات أو جهات الاتصال أو الرسائل أو أسماء شبكات Wi-Fi أو كلمات المرور. يربط معرّف عشوائي تقارير هذا التثبيت عبر التحديثات. يُعاد ضبطه عند إزالة التطبيق أو مسح بياناته.\n\nتُحذف الأحداث التفصيلية بعد 30 يومًا. تُحفظ الإحصاءات التي لا تحتوي على معرّفات تثبيت لمدة 90 يومًا. يمكنك إيقاف التقارير أو حذف تقاريرك المشتركة هنا في أي وقت.</string>
+    <string name="browser_update_settings">تحديثات التطبيق</string>
+    <string name="browser_telemetry_infotainment">شاشة الاختبار (اختياري)</string>
+    <string name="browser_telemetry_intel">Tesla · Intel</string>
+    <string name="browser_telemetry_ryzen">Tesla · AMD Ryzen</string>
+    <string name="browser_telemetry_other">أخرى</string>
+    <string name="browser_telemetry_unknown">لست متأكدًا</string>
+</resources>

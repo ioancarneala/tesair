@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_telemetry_title">Помогите улучшить TesAir</string>
+    <string name="browser_telemetry_description">Делитесь техническими данными о настройке, подключениях и производительности. Участие добровольное; его можно отключить в настройках.</string>
+    <string name="browser_telemetry_content_private">Без изображений, звука, сообщений, местоположений и данных Wi-Fi из CarPlay. Отчёты используют случайный ID установки и хранятся 30 дней.</string>
+    <string name="browser_telemetry_participate">Участвовать</string>
+    <string name="browser_telemetry_decline">Не отправлять</string>
+    <string name="browser_telemetry_settings">Использование и диагностика</string>
+    <string name="browser_telemetry_enabled">Технические отчёты отправляются</string>
+    <string name="browser_telemetry_disabled">Технические отчёты отключены</string>
+    <string name="browser_telemetry_change">Изменить участие</string>
+    <string name="browser_telemetry_delete">Удалить отправленные отчёты</string>
+    <string name="browser_telemetry_delete_title">Удалить ваши отчёты?</string>
+    <string name="browser_telemetry_delete_body">Отправка отчётов прекратится. Отправленные отчёты и ID установки будут удалены. Настройки CarPlay сохранятся.</string>
+    <string name="browser_telemetry_deleted">Отчёты удалены. Настройки CarPlay сохранены.</string>
+    <string name="browser_telemetry_delete_pending">Отчёты отключены. Удаление завершится, когда телефон подключится к интернету и TesAir снова запустится.</string>
+    <string name="browser_telemetry_support_id">ID для поддержки: %1$s</string>
+    <string name="browser_telemetry_feedback">Сообщить о проблеме с настройкой</string>
+    <string name="browser_telemetry_feedback_title">На каком шаге возникла проблема?</string>
+    <string name="browser_telemetry_feedback_sent">Спасибо. Ваш отзыв о работе приложения сохранён.</string>
+    <string name="browser_telemetry_privacy">Какие данные отправляются</string>
+    <string name="browser_telemetry_privacy_body">С вашего разрешения TesAir отправляет шаги настройки, результаты запросов разрешений, версии приложения и устройства, настройки видео, результаты подключений и показатели производительности на telemetry.tesair.co.\n\nОтчёты не содержат изображения экрана, звук, маршруты, контакты, сообщения, имена сетей Wi-Fi и пароли. Случайный ID связывает отчёты этой установки между обновлениями. Удаление приложения или очистка его данных сбрасывает ID.\n\nПодробные события удаляются через 30 дней. Статистика без ID установок хранится 90 дней. Здесь можно в любой момент отключить отчёты или удалить уже отправленные.</string>
+    <string name="browser_update_settings">Обновления приложения</string>
+    <string name="browser_telemetry_infotainment">Экран для тестирования (необязательно)</string>
+    <string name="browser_telemetry_intel">Tesla · Intel</string>
+    <string name="browser_telemetry_ryzen">Tesla · AMD Ryzen</string>
+    <string name="browser_telemetry_other">Другой</string>
+    <string name="browser_telemetry_unknown">Не знаю</string>
+</resources>

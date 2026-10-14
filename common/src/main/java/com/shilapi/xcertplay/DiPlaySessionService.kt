@@ -38,6 +38,7 @@ class DiPlaySessionService : Service() {
     private var stopRequested = false
     private var receiverRetiring = false
     private var destroyed = false
+    private var receiverAutomaticStart = true
     private var reliabilityMonitor: BrowserReliabilityMonitor? = null
     private val browserMaintenance = object : Runnable {
         override fun run() {
@@ -65,6 +66,8 @@ class DiPlaySessionService : Service() {
         super.onCreate()
         if (browserCarPlayEnabled(this)) {
             BrowserReliabilityDiagnostics.record(this, "service_create")
+            BrowserTelemetry.pump(this)
+            BrowserUpdates.check(this)
             browserWorker.execute {
                 ProcessExitDiagnostics.report(applicationContext).lineSequence().forEach {
                     BrowserReliabilityDiagnostics.record(applicationContext, it)
@@ -97,9 +100,12 @@ class DiPlaySessionService : Service() {
             return START_NOT_STICKY
         }
         if (intent != null && intent.action != ACTION_RECOVER) BrowserSessionRecovery.markStarted(this)
+        receiverAutomaticStart = intent?.action != ACTION_RECONNECT && intent?.getBooleanExtra(EXTRA_MANUAL_START, false) != true
         stopRequested = false
         if (browserMode) BrowserReliabilityDiagnostics.record(this,
             "service_start nullIntent=${intent == null} redelivered=${flags and START_FLAG_REDELIVERY != 0}")
+        if (browserMode && (intent == null || intent.action == ACTION_RECOVER)) BrowserTelemetry.record(this,
+            "receiver_start_requested", mapOf("automatic" to receiverAutomaticStart, "source" to "service_recovery"))
         if (!browserMode) startSessionForeground(browserMode)
         if (browserMode) {
             BrowserAddressService.ensureStartedIfEnabled(this)
@@ -194,6 +200,7 @@ class DiPlaySessionService : Service() {
         val receiver = synchronized(Companion) {
             runtime ?: BrowserCarPlayRuntime(applicationContext, output).also { runtime = it }
         }
+        receiver.setTelemetryStartOrigin(automatic = receiverAutomaticStart)
         receiver.start()
     }
 
@@ -316,6 +323,7 @@ class DiPlaySessionService : Service() {
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
         const val ACTION_RECONNECT = "com.shihab.diplay.RECONNECT"
         const val ACTION_RECOVER = "com.shihab.diplay.RECOVER"
+        const val EXTRA_MANUAL_START = "telemetry_manual_start"
         private var runtime: BrowserCarPlayRuntime? = null
         @Synchronized internal fun currentBrowserRuntime(): BrowserCarPlayRuntime? = runtime
         private const val BROWSER_MAINTENANCE_MILLIS = 30_000L

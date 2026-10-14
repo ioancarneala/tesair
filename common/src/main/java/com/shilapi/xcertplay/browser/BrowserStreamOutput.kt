@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import com.shilapi.xcertplay.BrowserTelemetry
 import com.shilapi.xcertplay.airplay.AirPlayContact
 import com.shilapi.xcertplay.airplay.AirPlayViewArea
 import com.shilapi.xcertplay.airplay.MediaSink
@@ -19,6 +20,7 @@ import org.json.JSONObject
 
 /** Main CarPlay stream goes directly from DiPlay's media engine to the browser decoder. */
 class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
+    private val app = context.applicationContext
     private val server = BridgeServer(context.applicationContext)
     private val main = Handler(Looper.getMainLooper())
     private val recovery = Executors.newSingleThreadExecutor { runnable ->
@@ -36,6 +38,8 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     @Volatile private var configured = false
     private var mediaGeneration = 0L
     private var renderedGeneration = -1L
+    private var receivedGeneration = -1L
+    @Volatile private var telemetryAttempt = 0
     private var lastRecovery = 0L
     private var keyframeHandler: (() -> Unit)? = null
     private var diagnosticHandler: ((String) -> Unit)? = null
@@ -95,6 +99,15 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         }
     }
 
+    /** Correlate the first compressed frame with its actual receiver connection attempt. */
+    fun setTelemetryAttempt(attempt: Int) { telemetryAttempt = attempt }
+
+    fun setTelemetryVideoProfile(fps: Int) { server.setRequestedFps(fps) }
+
+    fun telemetryConsentChanged() {
+        if (!closed.get()) server.telemetryConsentChanged()
+    }
+
     /** A native iPhone layout change leaves the encoded canvas and decoder running. */
     fun setViewArea(area: AirPlayViewArea?, canvasWidth: Int, canvasHeight: Int) {
         if (closed.get()) return
@@ -116,6 +129,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
             updateStatus("Browser ready · connect an iPhone in TesAir")
         } catch (error: Exception) {
             record("server_start_failed")
+            BrowserTelemetry.record(app, "browser_error", mapOf("reason" to "server_start_failed", "errorCode" to error.javaClass.simpleName))
             updateStatus("Browser server could not start: ${error.javaClass.simpleName}", true)
             throw error
         }
@@ -137,6 +151,8 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
             this.codec = codec
             if (codec != VideoCodec.H264) {
                 configured = false; server.resetVideo(); mediaGeneration++
+                BrowserTelemetry.record(app, "browser_error", mapOf("attempt" to telemetryAttempt,
+                    "reason" to "unsupported_iphone_codec", "codec" to codec.name.lowercase()))
                 updateStatus("Unsupported video format. Reconnect your iPhone in TesAir.", true)
             }
         }
@@ -164,6 +180,8 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
                 changed = true
                 configured = false; server.resetVideo(); mediaGeneration++
                 record("video_config_rejected")
+                BrowserTelemetry.record(app, "browser_error", mapOf("attempt" to telemetryAttempt,
+                    "reason" to "video_config_rejected", "codec" to "h264"))
                 updateStatus("CarPlay supplied an unsupported H.264 configuration.", true)
             }
         }
@@ -178,6 +196,11 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         synchronized(mediaLock) {
             if (!configured) return
             if (naluBytes.isEmpty() || naluBytes.size > MAX_FRAME_BYTES) { requestKeyframe(); return }
+            if (receivedGeneration != mediaGeneration) {
+                receivedGeneration = mediaGeneration
+                BrowserTelemetry.record(app, "video_received", mapOf("attempt" to telemetryAttempt,
+                    "width" to pictureWidth, "height" to pictureHeight, "codec" to "h264"))
+            }
             server.frame(naluBytes, H264Format.isKeyframe(naluBytes), clock.timestamp(senderNanos, arrivalNanos))
         }
     }

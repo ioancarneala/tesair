@@ -17,8 +17,8 @@ android {
         applicationId = "co.tesair.app"
         minSdk = 28
         targetSdk = 37
-        versionCode = 65
-        versionName = "1.0.3"
+        versionCode = 66
+        versionName = "1.0.4"
 
     }
 

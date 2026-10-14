@@ -26,6 +26,7 @@ internal class BrowserDashboardView(
     private val openVpn: () -> Unit = settings,
     private val openInternet: () -> Unit = settings,
     private val connectIphone: () -> Unit = reviewSetup,
+    private val updateApp: () -> Unit = {},
 ) : ScrollView(context) {
     // Deliberately not a data class: a debug toString must never expose the Wi-Fi password.
     class State(
@@ -101,6 +102,7 @@ internal class BrowserDashboardView(
         importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
     private val primary = button("", true) { performPrimaryAction() }
+    private val updateButton = button(string(R.string.browser_update_settings)) { updateApp() }.apply { visibility = View.GONE }
     private val phoneState = DetailRow(R.string.browser_details_iphone)
     private val browserState = DetailRow(R.string.browser_details_browser)
     private val networkName = text(22, true)
@@ -168,6 +170,7 @@ internal class BrowserDashboardView(
             topMargin = dp(16)
         })
         content.addView(primary, params(20))
+        content.addView(updateButton, params(8))
         content.addView(contextualCards)
         content.addView(detailsButton, params(20))
         content.addView(details, params(4))
@@ -217,6 +220,8 @@ internal class BrowserDashboardView(
         updateDetailsButton()
         updateTechnicalButton()
     }
+
+    fun showUpdate(available: Boolean) { updateButton.visibility = if (available) View.VISIBLE else View.GONE }
 
     fun render(next: State) {
         if (state?.password != next.password || state?.networkName != next.networkName) passwordVisible = false

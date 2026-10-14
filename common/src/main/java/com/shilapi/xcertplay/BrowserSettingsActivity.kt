@@ -29,7 +29,7 @@ import java.util.Locale
 
 /** Browser-only preferences. Merely visiting a screen never restarts the receiver. */
 class BrowserSettingsActivity : ComponentActivity() {
-    private enum class Page { HOME, CONNECTION, PICTURE, HELP, ABOUT }
+    private enum class Page { HOME, CONNECTION, PICTURE, HELP, ABOUT, DIAGNOSTICS }
     private var page = Page.HOME
     private lateinit var scroll: ScrollView
     private lateinit var content: LinearLayout
@@ -127,6 +127,7 @@ class BrowserSettingsActivity : ComponentActivity() {
             Page.PICTURE -> R.string.settings_browser_preferences_picture
             Page.HELP -> R.string.settings_browser_preferences_help
             Page.ABOUT -> R.string.about
+            Page.DIAGNOSTICS -> R.string.browser_telemetry_settings
         }
         content.addView(text(getString(title), 30, true), match(top = 12, bottom = 20))
         when (page) {
@@ -135,6 +136,7 @@ class BrowserSettingsActivity : ComponentActivity() {
             Page.PICTURE -> picture()
             Page.HELP -> help()
             Page.ABOUT -> about()
+            Page.DIAGNOSTICS -> diagnostics()
         }
         if (page != Page.ABOUT && PendingReconnect.isPending(CarPlayBackgroundSession.snapshot()?.controller)) {
             val pending = card()
@@ -161,7 +163,73 @@ class BrowserSettingsActivity : ComponentActivity() {
             AppLocale.showPicker(this)
         }
         divider(app)
+        row(app, R.string.browser_telemetry_settings, getString(if (BrowserTelemetry.enabled(this))
+            R.string.browser_telemetry_enabled else R.string.browser_telemetry_disabled)) { open(Page.DIAGNOSTICS) }
+        divider(app)
+        row(app, R.string.browser_update_settings, getString(R.string.browser_product_name)) { BrowserUpdates.show(this) }
+        divider(app)
         row(app, R.string.about, getString(R.string.browser_product_name)) { open(Page.ABOUT) }
+    }
+
+    private fun diagnostics() {
+        val participation = card()
+        participation.addView(text(getString(if (BrowserTelemetry.enabled(this)) R.string.browser_telemetry_enabled
+            else R.string.browser_telemetry_disabled), 18, true))
+        participation.addView(text(getString(R.string.browser_telemetry_description), 15), match(top = 12))
+        action(participation, R.string.browser_telemetry_change) {
+            dialog = BrowserTelemetryConsent.show(this) { render(preserveScroll = true) }
+        }
+        action(participation, R.string.browser_telemetry_privacy) {
+            showDialog(AlertDialog.Builder(this).setTitle(R.string.browser_telemetry_privacy)
+                .setMessage(R.string.browser_telemetry_privacy_body).setPositiveButton(android.R.string.ok, null).create())
+        }
+        BrowserTelemetry.installationId(this)?.let { id ->
+            val support = card()
+            support.addView(text(getString(R.string.browser_telemetry_support_id, id), 14).apply { setTextIsSelectable(true) })
+            action(support, R.string.browser_telemetry_feedback) { feedback() }
+            row(support, R.string.browser_telemetry_infotainment,
+                getString(when (getSharedPreferences("browser_telemetry_context", MODE_PRIVATE).getString("declaredInfotainment", "unknown")) {
+                    "intel" -> R.string.browser_telemetry_intel
+                    "ryzen" -> R.string.browser_telemetry_ryzen
+                    "other" -> R.string.browser_telemetry_other
+                    else -> R.string.browser_telemetry_unknown
+                })) {
+                val values = arrayOf("unknown", "intel", "ryzen", "other")
+                val labels = arrayOf(getString(R.string.browser_telemetry_unknown), getString(R.string.browser_telemetry_intel),
+                    getString(R.string.browser_telemetry_ryzen), getString(R.string.browser_telemetry_other))
+                showDialog(AlertDialog.Builder(this).setTitle(R.string.browser_telemetry_infotainment).setItems(labels) { _, index ->
+                    getSharedPreferences("browser_telemetry_context", MODE_PRIVATE).edit().putString("declaredInfotainment", values[index]).apply()
+                    BrowserTelemetry.record(this, "configuration_saved", mapOf("declaredInfotainment" to values[index], "source" to "user_reported"))
+                    render(preserveScroll = true)
+                }.setNegativeButton(R.string.cancel, null).create())
+            }
+        }
+        val deletion = card()
+        action(deletion, R.string.browser_telemetry_delete) {
+            showDialog(AlertDialog.Builder(this).setTitle(R.string.browser_telemetry_delete_title)
+                .setMessage(R.string.browser_telemetry_delete_body).setNegativeButton(R.string.cancel, null)
+                .setPositiveButton(R.string.browser_telemetry_delete) { _, _ ->
+                    BrowserTelemetry.deleteData(this) { deleted -> runOnUiThread {
+                        if (!isFinishing && !isDestroyed) {
+                            render(preserveScroll = true)
+                            showDialog(AlertDialog.Builder(this).setMessage(if (deleted) R.string.browser_telemetry_deleted
+                                else R.string.browser_telemetry_delete_pending).setPositiveButton(android.R.string.ok, null).create())
+                        }
+                    } }
+                }.create())
+        }
+    }
+
+    private fun feedback() {
+        val labels = intArrayOf(R.string.onboarding_chapter_android, R.string.onboarding_chapter_iphone,
+            R.string.onboarding_chapter_tesla, R.string.settings_browser_preferences_picture, R.string.browser_telemetry_other)
+        val steps = arrayOf("android", "iphone", "browser", "picture", "other")
+        showDialog(AlertDialog.Builder(this).setTitle(R.string.browser_telemetry_feedback_title)
+            .setItems(labels.map { getString(it) }.toTypedArray()) { _, index ->
+                BrowserTelemetry.record(this, "diagnostic_feedback", mapOf("step" to steps[index], "result" to "needs_help"))
+                showDialog(AlertDialog.Builder(this).setMessage(R.string.browser_telemetry_feedback_sent)
+                    .setPositiveButton(android.R.string.ok, null).create())
+            }.setNegativeButton(R.string.cancel, null).create())
     }
 
     private fun connection() {
@@ -407,6 +475,13 @@ class BrowserSettingsActivity : ComponentActivity() {
     }
 
     private fun markReconnectNeeded() {
+        BrowserTelemetry.record(this, "configuration_saved", mapOf(
+            "qualityPercent" to AirPlayPersistence.loadBrowserResolutionPercent(this),
+            "fpsRequested" to AirPlayPersistence.loadFps(this),
+            "interfaceScale" to AirPlayPersistence.loadWidthPhysicalMm(this),
+            "source" to "preferences",
+            "result" to if (CarPlayBackgroundSession.hasSession()) "pending_connection" else "saved",
+        ))
         CarPlayBackgroundSession.snapshot()?.controller?.let(PendingReconnect::mark)
         render(preserveScroll = true)
     }

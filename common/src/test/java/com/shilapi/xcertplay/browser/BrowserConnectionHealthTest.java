@@ -60,6 +60,20 @@ public class BrowserConnectionHealthTest {
         assertEquals(List.of("viewer_open"), events);
     }
 
+    @Test public void consentBroadcastSurvivesAStatusUpdateBeforeTheWriterDrainsControls() throws Exception {
+        await(() -> senderWaitingIn(FrameQueue.class, "poll"));
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        synchronized (queue) {
+            // Keep the writer in poll until both independently coalesced messages are pending.
+            server.telemetryConsentChanged();
+            server.browserStatus("ready_after_consent", false);
+        }
+        await(() -> wireText().contains("\"type\":\"telemetry_consent\"")
+                && wireText().contains("ready_after_consent"));
+        assertEquals(1, server.clientCount());
+        assertTrue(events.stream().noneMatch(value -> value.startsWith("viewer_close")));
+    }
+
     @Test public void renderStallGetsOneRecoveryThenClosesIfFramesStillAreNotAcknowledged() throws Exception {
         fillFrameWindow();
         ShadowSystemClock.advanceBy(Duration.ofMillis(1600));

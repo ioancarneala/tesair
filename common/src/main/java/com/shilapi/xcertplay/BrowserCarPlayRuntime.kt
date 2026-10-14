@@ -59,6 +59,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     private var observerRegistered = false
     private val closeWaiters = mutableListOf<() -> Unit>()
     private var closeCompleted = false
+    private var manualAttempt = false
+    private var recoveryStartedAt = -1L
     var onStatusChanged: (() -> Unit)? = null
     var status: CarPlayStatus? = null
         private set
@@ -86,12 +88,18 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         }
     }
 
+    /** Metadata only: preserve the receiver's existing start/reconnect API and behaviour. */
+    fun setTelemetryStartOrigin(automatic: Boolean) = onMain {
+        if (!requested) manualAttempt = !automatic
+    }
+
     fun start() = onMain {
         if (closed) return@onMain
         if (!requested) {
             requested = true
             diagnosticLog.beginSession("Receiver service session epochMs=${System.currentTimeMillis()}")
             record("receiver_requested")
+            BrowserTelemetry.record(context, "receiver_start_requested", mapOf("automatic" to !manualAttempt))
             output.onViewport = viewportListener
             output.lastViewport?.let { viewport = BrowserCarPlayViewport.save(context, it.first, it.second) }
             context.registerComponentCallbacks(configurationObserver)
@@ -107,6 +115,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     fun reconnect() = onMain {
         if (closed) return@onMain
         retryBudget.manualRetry()
+        manualAttempt = true
+        BrowserTelemetry.record(context, "receiver_start_requested", mapOf("manualIntervention" to true, "source" to "connect_action"))
         setupNeedsAttention = false
         configureNightMode()
         cancelRetry()
@@ -129,6 +139,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         nightMode.pause()
         commands.shutdown()
         record("receiver_close")
+        BrowserTelemetry.record(context, "session_ended", mapOf("reason" to "receiver_closed"))
         retire { finishClose() }
     }
 
@@ -158,6 +169,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         preparing = true
         val attempt = ++generation
         val size = viewport
+        val automatic = !manualAttempt
+        manualAttempt = false
         record("receiver_preparing generation=$attempt width=${size.first} height=${size.second}")
         worker.execute {
             val result = runCatching {
@@ -177,8 +190,10 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             main.post {
                 if (closed || attempt != generation) return@post
                 preparing = false
-                result.fold(onSuccess = { begin(it, size, attempt) }, onFailure = {
+                result.fold(onSuccess = { begin(it, size, attempt, automatic) }, onFailure = {
                     record("receiver_prepare_failed generation=$attempt class=${it.javaClass.simpleName}")
+                    BrowserTelemetry.record(context, "receiver_start_failed", mapOf("attempt" to attempt,
+                        "reason" to "prepare_failed", "errorCode" to it.javaClass.simpleName))
                     setupNeedsAttention = true
                     setStatus(CarPlayStatus.Failed("Receiver setup needs attention. Open connection setup and reconnect."))
                 })
@@ -186,7 +201,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         }
     }
 
-    private fun begin(prepared: Prepared, size: Pair<Int, Int>, attempt: Int) {
+    private fun begin(prepared: Prepared, size: Pair<Int, Int>, attempt: Int, automatic: Boolean) {
         try {
             val renderer = AndroidMediaSink(context = context, surface = null,
                 videoWidth = prepared.video.main.widthPixels, videoHeight = prepared.video.main.heightPixels,
@@ -203,6 +218,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
                     if (!closed && generation == attempt) {
                         setStatus(incoming)
                         if (incoming is CarPlayStatus.Failed) {
+                            BrowserTelemetry.record(context, "receiver_start_failed", mapOf("attempt" to attempt,
+                                "reason" to "startup_failure", "errorCode" to (incoming.startupFailure?.name ?: "unknown")))
                             if (incoming.wifiResetRequired || incoming.startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
                                 setupNeedsAttention = true
                                 onStatusChanged?.invoke()
@@ -228,10 +245,18 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
                 }
             }
             output.setViewArea(prepared.layout.currentArea, prepared.layout.canvasWidth, prepared.layout.canvasHeight)
+            output.setTelemetryAttempt(attempt)
+            output.setTelemetryVideoProfile(prepared.video.main.fps)
+            BrowserTelemetry.record(context, "connection_attempt_started", mapOf("attempt" to attempt,
+                "automatic" to automatic, "width" to size.first, "height" to size.second))
             record("receiver_started generation=$attempt canvas=${display.width}x${display.height} fps=${prepared.video.main.fps}")
+            BrowserTelemetry.record(context, "receiver_started", mapOf("attempt" to attempt, "width" to display.width,
+                "height" to display.height, "fpsRequested" to prepared.video.main.fps, "codec" to "h264"))
             next.start()
         } catch (error: RuntimeException) {
             record("receiver_start_failed generation=$attempt class=${error.javaClass.simpleName}")
+            BrowserTelemetry.record(context, "receiver_start_failed", mapOf("attempt" to attempt,
+                "reason" to "start_failed", "errorCode" to error.javaClass.simpleName))
             setStatus(CarPlayStatus.Failed("Could not start the receiver. Retrying automatically."))
             scheduleRetry(null, "start_failed")
         }
@@ -243,6 +268,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             activeSession = session
             CarPlayBackgroundSession.active = true
             record("iphone_session_active generation=$attempt")
+            BrowserTelemetry.record(context, "iphone_connected", mapOf("attempt" to attempt, "transport" to "wireless"))
+            BrowserUpdates.check(context)
             sendNightMode(nightMode.night)
             onStatusChanged?.invoke()
         }
@@ -251,6 +278,11 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             if (closed || generation != attempt || activeSession !== session) return@onMain
             cancelRetry()
             applyViewArea(force = true)
+            if (recoveryStartedAt >= 0) {
+                BrowserTelemetry.record(context, "recovery_completed", mapOf("attempt" to attempt,
+                    "durationMs" to (SystemClock.elapsedRealtime() - recoveryStartedAt).coerceAtLeast(0)))
+                recoveryStartedAt = -1L
+            }
             if (retryBudget.firstFrame(session, SystemClock.elapsedRealtime())) {
                 main.postDelayed({
                     if (!closed && generation == attempt && activeSession === session &&
@@ -267,6 +299,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             CarPlayBackgroundSession.active = false
             retryBudget.disconnected()
             record("iphone_session_ended generation=$attempt")
+            BrowserTelemetry.record(context, "iphone_disconnected", mapOf("attempt" to attempt, "reason" to "session_ended"))
             onStatusChanged?.invoke()
             scheduleRetry(null, "session_ended")
         }
@@ -275,6 +308,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             if (closed || generation != attempt) return@onMain
             retryBudget.disconnected()
             record("iphone_transport_error generation=$attempt")
+            BrowserTelemetry.record(context, "iphone_disconnected", mapOf("attempt" to attempt,
+                "reason" to "transport_error", "errorCode" to "transport_error"))
             // The message can contain a peer's address; the persistent log redacts it separately.
             AsyncDiagnosticLog.append(diagnosticLog, message)
             scheduleRetry(null, "transport_error", message.contains("AirPlay iAP tunnel", ignoreCase = true))
@@ -291,6 +326,9 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         val delay = if (tunnel) 15_000L else retryBudget.nextDelayMillis(continuous = true) ?: return
         val attempt = generation
         record("iphone_retry_scheduled generation=$attempt delayMs=$delay reason=$reason startupFailure=${failure ?: "none"}")
+        if (recoveryStartedAt < 0) recoveryStartedAt = SystemClock.elapsedRealtime()
+        BrowserTelemetry.record(context, "recovery_scheduled", mapOf("attempt" to attempt, "retryDelayMs" to delay,
+            "reason" to reason, "errorCode" to (failure?.name ?: "none"), "automatic" to true))
         retry = Runnable {
             retry = null
             if (!closed && requested && generation == attempt) restart()

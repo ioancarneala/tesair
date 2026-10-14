@@ -4,7 +4,7 @@
 
 - JDK 25 and the checked-in Gradle wrapper.
 - Android SDK 37 and NDK `28.2.13676358`; set `ANDROID_HOME` to your SDK.
-- Node.js for browser tests and Python 3 for repository checks.
+- Node.js 22.16 or later for browser/service tests and Python 3 for repository checks.
 
 Dependency versions are in `gradle/libs.versions.toml`.
 
@@ -32,7 +32,8 @@ trusted HTTPS requires separately supplied runtime provisioning.
   :mobile:processDebugManifest :mobile:processReleaseManifest
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/check_public_tree.py
-node --test tests/browser-player.test.cjs
+node --test tests/browser-player.test.cjs tests/browser-telemetry.test.cjs
+node --test backend/telemetry/test/*.test.mjs
 python3 scripts/verify-browser-manifests.py \
   --debug mobile/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml \
   --release mobile/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
@@ -71,3 +72,19 @@ in GitHub Releases. Lead release notes with user-visible improvements and any
 required update steps. Keep detailed validation in the pull request; mention
 device testing when it adds useful compatibility information, and known issues
 when they affect users.
+
+Generate the update metadata from that verified APK, using the Android SDK tools:
+
+```sh
+python3 scripts/generate-update-manifest.py \
+  mobile/build/outputs/apk/release/mobile-release.apk \
+  --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+  --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+  --output ../dist/update.json
+```
+
+Attach `update.json` beside `TesAir-vVERSION.apk` in the matching stable GitHub
+release. Keep these generated files outside the source tree. The app offers the
+update after checking the package, version, checksum and existing signing key;
+installation always requires a user action. The optional reporting service and
+private analysis commands are documented in [backend/telemetry](../backend/telemetry/README.md).

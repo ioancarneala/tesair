@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_telemetry_title">Ayuda a mejorar TesAir</string>
+    <string name="browser_telemetry_description">Comparte datos técnicos sobre configuración, conexiones y rendimiento. Es opcional y puedes desactivarlo en Ajustes.</string>
+    <string name="browser_telemetry_content_private">Sin imágenes, audio, mensajes, ubicaciones ni datos de Wi-Fi de CarPlay. Los informes usan un ID de instalación aleatorio y se guardan durante 30 días.</string>
+    <string name="browser_telemetry_participate">Participar</string>
+    <string name="browser_telemetry_decline">No enviar</string>
+    <string name="browser_telemetry_settings">Uso y diagnóstico</string>
+    <string name="browser_telemetry_enabled">Compartiendo informes técnicos</string>
+    <string name="browser_telemetry_disabled">Informes técnicos desactivados</string>
+    <string name="browser_telemetry_change">Cambiar participación</string>
+    <string name="browser_telemetry_delete">Eliminar informes compartidos</string>
+    <string name="browser_telemetry_delete_title">¿Eliminar tus informes?</string>
+    <string name="browser_telemetry_delete_body">Se dejarán de enviar informes. Se eliminarán los informes compartidos y el ID de instalación. Tus ajustes de CarPlay se conservarán.</string>
+    <string name="browser_telemetry_deleted">Informes eliminados. Tus ajustes de CarPlay se conservan.</string>
+    <string name="browser_telemetry_delete_pending">Los informes están desactivados. La eliminación se completará cuando este teléfono tenga internet y TesAir vuelva a ejecutarse.</string>
+    <string name="browser_telemetry_support_id">ID de soporte: %1$s</string>
+    <string name="browser_telemetry_feedback">Informar de un problema de configuración</string>
+    <string name="browser_telemetry_feedback_title">¿En qué paso te quedaste?</string>
+    <string name="browser_telemetry_feedback_sent">Gracias. Tus comentarios técnicos se han guardado.</string>
+    <string name="browser_telemetry_privacy">Qué se comparte</string>
+    <string name="browser_telemetry_privacy_body">Con tu permiso, TesAir envía pasos de configuración, resultados de permisos, versiones de la aplicación y del dispositivo, ajustes de vídeo, resultados de conexión y contadores de rendimiento a telemetry.tesair.co.\n\nLos informes no contienen imágenes de pantalla, audio, rutas, contactos, mensajes, nombres de Wi-Fi ni contraseñas. Un ID aleatorio vincula los informes de esta instalación entre actualizaciones. Desinstalar o borrar los datos de la aplicación lo restablece.\n\nLos eventos detallados se eliminan después de 30 días. Las estadísticas sin ID de instalación se conservan durante 90 días. Puedes desactivar los informes o eliminar los que has compartido aquí en cualquier momento.</string>
+    <string name="browser_update_settings">Actualizaciones de la aplicación</string>
+    <string name="browser_telemetry_infotainment">Pantalla de prueba (opcional)</string>
+    <string name="browser_telemetry_intel">Tesla · Intel</string>
+    <string name="browser_telemetry_ryzen">Tesla · AMD Ryzen</string>
+    <string name="browser_telemetry_other">Otra</string>
+    <string name="browser_telemetry_unknown">No estoy seguro</string>
+</resources>

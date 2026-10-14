@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_telemetry_title">協助改善 TesAir</string>
+    <string name="browser_telemetry_description">分享設定、連線和效能方面的技術資料。參與完全自願，可隨時在設定中關閉。</string>
+    <string name="browser_telemetry_content_private">不收集 CarPlay 圖像、音訊、訊息、位置或 Wi-Fi 詳情。報告使用隨機安裝 ID，並保留 30 天。</string>
+    <string name="browser_telemetry_participate">參與</string>
+    <string name="browser_telemetry_decline">不傳送</string>
+    <string name="browser_telemetry_settings">使用情況與診斷</string>
+    <string name="browser_telemetry_enabled">正在分享技術報告</string>
+    <string name="browser_telemetry_disabled">技術報告已關閉</string>
+    <string name="browser_telemetry_change">更改參與設定</string>
+    <string name="browser_telemetry_delete">刪除已分享的報告</string>
+    <string name="browser_telemetry_delete_title">刪除你的報告？</string>
+    <string name="browser_telemetry_delete_body">將停止回報。已分享的報告及安裝 ID 將被刪除。你的 CarPlay 設定會保留。</string>
+    <string name="browser_telemetry_deleted">報告已刪除。你的 CarPlay 設定已保留。</string>
+    <string name="browser_telemetry_delete_pending">報告已關閉。當此手機連線且 TesAir 再次執行時，將完成刪除。</string>
+    <string name="browser_telemetry_support_id">支援 ID：%1$s</string>
+    <string name="browser_telemetry_feedback">回報設定問題</string>
+    <string name="browser_telemetry_feedback_title">你在哪一步遇到問題？</string>
+    <string name="browser_telemetry_feedback_sent">謝謝。你的技術回饋已儲存。</string>
+    <string name="browser_telemetry_privacy">分享哪些資料</string>
+    <string name="browser_telemetry_privacy_body">經你允許，TesAir 會向 telemetry.tesair.co 傳送設定步驟、權限結果、應用程式和裝置版本、影片設定、連線結果及效能計數。\n\n報告不包含畫面內容、音訊、路線、聯絡人、訊息、Wi-Fi 名稱或密碼。隨機 ID 用於關聯此安裝在各次更新之間的報告。解除安裝應用程式或清除應用程式資料會重設此 ID。\n\n詳細事件在 30 天後刪除。不含安裝 ID 的統計資料保留 90 天。你可以隨時在此關閉報告或刪除已分享的報告。</string>
+    <string name="browser_update_settings">應用程式更新</string>
+    <string name="browser_telemetry_infotainment">測試螢幕（選填）</string>
+    <string name="browser_telemetry_intel">Tesla · Intel</string>
+    <string name="browser_telemetry_ryzen">Tesla · AMD Ryzen</string>
+    <string name="browser_telemetry_other">其他</string>
+    <string name="browser_telemetry_unknown">不確定</string>
+</resources>

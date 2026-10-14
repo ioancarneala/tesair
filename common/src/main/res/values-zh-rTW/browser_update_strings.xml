@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_update_title">更新</string>
+    <string name="browser_update_back">返回</string>
+    <string name="browser_update_channel">應用程式更新</string>
+    <string name="browser_update_available">TesAir %1$s 已推出</string>
+    <string name="browser_update_notification">開啟 TesAir 以下載更新。</string>
+    <string name="browser_update_ready">下載最新版本。Android 會要求你確認安裝。</string>
+    <string name="browser_update_checking">正在檢查更新…</string>
+    <string name="browser_update_current">目前已是最新版本。</string>
+    <string name="browser_update_offline">無法檢查更新。請連接網際網路後重試。</string>
+    <string name="browser_update_offline_available">先前發現了更新。請連接網際網路以下載。</string>
+    <string name="browser_update_download">下載更新</string>
+    <string name="browser_update_install">安裝更新</string>
+    <string name="browser_update_check">再次檢查</string>
+    <string name="browser_update_keeps_settings">你的設定和配置會保留。</string>
+    <string name="browser_update_downloading">正在下載…</string>
+    <string name="browser_update_downloaded">可以安裝了。</string>
+    <string name="browser_update_verifying">正在驗證更新…</string>
+    <string name="browser_update_download_failed">無法下載或驗證更新。請重試。</string>
+    <string name="browser_update_carplay_active">請先結束 CarPlay 工作階段，再安裝更新。</string>
+    <string name="browser_update_source_required">請在 Android 設定中允許透過 TesAir 安裝更新，然後點選安裝更新。</string>
+    <string name="browser_update_confirm_android">請在 Android 中確認更新。你也可以稍後安裝。</string>
+    <string name="browser_update_install_failed">Android 無法開啟安裝程式。請重試。</string>
+</resources>

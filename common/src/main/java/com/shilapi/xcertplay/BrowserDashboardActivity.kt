@@ -36,6 +36,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     private var serviceFailure: String? = null
     private var languagePreference = AppLocale.SYSTEM
     private var settingsRepair: SettingsRepair? = null
+    private var telemetryConsent: AlertDialog? = null
 
     private enum class SettingsRepair { HOTSPOT, BLUETOOTH, VPN }
 
@@ -84,6 +85,7 @@ class BrowserDashboardActivity : ComponentActivity() {
             isAppearanceLightNavigationBars = light
         }
         dashboard = BrowserDashboardView(this,
+            updateApp = { BrowserUpdates.show(this) },
             allowBackground = ::allowBackground,
             enableRoute = ::requestBrowserAddress,
             toggleRoute = {
@@ -124,6 +126,9 @@ class BrowserDashboardActivity : ComponentActivity() {
         super.onStart()
         handler.removeCallbacks(refresh)
         handler.post(refresh)
+        BrowserUpdates.check(this) {
+            if (!isFinishing && !isDestroyed) dashboard.showUpdate(BrowserUpdates.cached(this) != null)
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -136,6 +141,12 @@ class BrowserDashboardActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        BrowserTelemetry.pump(this)
+        if (BrowserTelemetry.choice(this) == "unset" && telemetryConsent?.isShowing != true) {
+            telemetryConsent = BrowserTelemetryConsent.show(this) {
+                BrowserTelemetry.record(this, "app_opened", mapOf("source" to "dashboard"))
+            }
+        } else BrowserTelemetry.record(this, "app_opened", mapOf("source" to "dashboard"))
         if (Build.VERSION.SDK_INT < 33 && languagePreference != AppLocale.preference(this)) {
             recreate()
             return
@@ -150,6 +161,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        BrowserTelemetry.record(this, "app_backgrounded", mapOf("source" to "dashboard"))
         dashboard.concealPassword()
         super.onPause()
     }
@@ -160,6 +172,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        telemetryConsent?.dismiss()
         handler.removeCallbacks(refresh)
         super.onDestroy()
     }
@@ -188,6 +201,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     private fun startReceiver(reconnect: Boolean) {
+        if (reconnect) BrowserTelemetry.record(this, "receiver_start_requested", mapOf("automatic" to false, "manualIntervention" to true, "source" to "dashboard"))
         serviceFailure = null
         reconnectAfterPermissions = false
         try {
@@ -201,6 +215,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     private fun allowBackground() {
+        BrowserTelemetry.record(this, "permission_requested", mapOf("permission" to "background"))
         if (!BrowserBackgroundReadiness.request(this)) {
             AlertDialog.Builder(this).setMessage(R.string.browser_battery_unavailable)
                 .setPositiveButton(android.R.string.ok, null).show()
@@ -218,6 +233,7 @@ class BrowserDashboardActivity : ComponentActivity() {
         if (consent == null) BrowserAddressService.enable(this)
         else {
             awaitingRouteConsent = true
+            BrowserTelemetry.record(this, "permission_requested", mapOf("permission" to "local_route"))
             routeConsent.launch(consent)
         }
         updateStatus()

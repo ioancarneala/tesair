@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_update_title">Updates</string>
+    <string name="browser_update_back">Back</string>
+    <string name="browser_update_channel">App updates</string>
+    <string name="browser_update_available">TesAir %1$s is available</string>
+    <string name="browser_update_notification">Open TesAir to download the update.</string>
+    <string name="browser_update_ready">Download the latest version. Android will ask you to confirm installation.</string>
+    <string name="browser_update_checking">Checking for updates…</string>
+    <string name="browser_update_current">You have the latest version.</string>
+    <string name="browser_update_offline">Couldn’t check for updates. Connect to the internet and try again.</string>
+    <string name="browser_update_offline_available">An update was found earlier. Connect to the internet to download it.</string>
+    <string name="browser_update_download">Download update</string>
+    <string name="browser_update_install">Install update</string>
+    <string name="browser_update_check">Check again</string>
+    <string name="browser_update_keeps_settings">Your settings and setup stay saved.</string>
+    <string name="browser_update_downloading">Downloading…</string>
+    <string name="browser_update_downloaded">Ready to install.</string>
+    <string name="browser_update_verifying">Verifying update…</string>
+    <string name="browser_update_download_failed">The update couldn’t be downloaded or verified. Try again.</string>
+    <string name="browser_update_carplay_active">Finish your CarPlay session before installing the update.</string>
+    <string name="browser_update_source_required">Allow updates from TesAir in Android settings, then tap Install update.</string>
+    <string name="browser_update_confirm_android">Confirm the update in Android. You can also install it later.</string>
+    <string name="browser_update_install_failed">Android couldn’t open the installer. Try again.</string>
+</resources>

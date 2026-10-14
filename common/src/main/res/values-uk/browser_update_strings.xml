@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_update_title">Оновлення</string>
+    <string name="browser_update_back">Назад</string>
+    <string name="browser_update_channel">Оновлення застосунку</string>
+    <string name="browser_update_available">Доступна версія TesAir %1$s</string>
+    <string name="browser_update_notification">Відкрийте TesAir, щоб завантажити оновлення.</string>
+    <string name="browser_update_ready">Завантажте нову версію. Android попросить підтвердити встановлення.</string>
+    <string name="browser_update_checking">Перевірка оновлень…</string>
+    <string name="browser_update_current">У вас найновіша версія.</string>
+    <string name="browser_update_offline">Не вдалося перевірити оновлення. Підключіться до інтернету та спробуйте ще раз.</string>
+    <string name="browser_update_offline_available">Оновлення знайдено раніше. Підключіться до інтернету, щоб завантажити його.</string>
+    <string name="browser_update_download">Завантажити оновлення</string>
+    <string name="browser_update_install">Встановити оновлення</string>
+    <string name="browser_update_check">Перевірити ще раз</string>
+    <string name="browser_update_keeps_settings">Ваші налаштування збережуться.</string>
+    <string name="browser_update_downloading">Завантаження…</string>
+    <string name="browser_update_downloaded">Готове до встановлення.</string>
+    <string name="browser_update_verifying">Перевірка оновлення…</string>
+    <string name="browser_update_download_failed">Не вдалося завантажити або перевірити оновлення. Спробуйте ще раз.</string>
+    <string name="browser_update_carplay_active">Завершіть сеанс CarPlay перед встановленням оновлення.</string>
+    <string name="browser_update_source_required">Дозвольте оновлення з TesAir у налаштуваннях Android, а потім натисніть Встановити оновлення.</string>
+    <string name="browser_update_confirm_android">Підтвердьте оновлення в Android. Його можна встановити пізніше.</string>
+    <string name="browser_update_install_failed">Android не зміг відкрити програму встановлення. Спробуйте ще раз.</string>
+</resources>

@@ -63,6 +63,12 @@ class BrowserOnboardingUiTest {
             buttons(screen).map { it.text.toString() })
 
         button(screen, R.string.onboarding_begin).performClick()
+        val consent = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertTrue(consent.isShowing)
+        assertEquals(Step.WELCOME, BrowserOnboardingProgress.step(context))
+        consent.getButton(android.app.AlertDialog.BUTTON_NEGATIVE).performClick()
+        shadowOf(android.os.Looper.getMainLooper()).idle()
+        assertEquals("disabled", BrowserTelemetry.choice(context))
         assertEquals(Step.NETWORK, BrowserOnboardingProgress.step(context))
         assertProductIdentity(screen)
         assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_network_title)))

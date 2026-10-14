@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_telemetry_title">Help improve TesAir</string>
+    <string name="browser_telemetry_description">Share technical data about setup, connections and performance. Participation is optional and can be turned off in Settings.</string>
+    <string name="browser_telemetry_content_private">No CarPlay images, audio, messages, locations or Wi-Fi details. Reports use a random installation ID and are kept for 30 days.</string>
+    <string name="browser_telemetry_participate">Participate</string>
+    <string name="browser_telemetry_decline">Don’t send</string>
+    <string name="browser_telemetry_settings">Usage &amp; diagnostics</string>
+    <string name="browser_telemetry_enabled">Sharing technical reports</string>
+    <string name="browser_telemetry_disabled">Technical reports are off</string>
+    <string name="browser_telemetry_change">Change participation</string>
+    <string name="browser_telemetry_delete">Delete shared reports</string>
+    <string name="browser_telemetry_delete_title">Delete your reports?</string>
+    <string name="browser_telemetry_delete_body">Reporting will stop. Shared reports and the installation ID will be deleted. Your CarPlay settings stay saved.</string>
+    <string name="browser_telemetry_deleted">Reports deleted. Your CarPlay settings are saved.</string>
+    <string name="browser_telemetry_delete_pending">Reporting is off. Deletion will finish when this phone is online and TesAir runs again.</string>
+    <string name="browser_telemetry_support_id">Support ID: %1$s</string>
+    <string name="browser_telemetry_feedback">Report a setup problem</string>
+    <string name="browser_telemetry_feedback_title">Where did you get stuck?</string>
+    <string name="browser_telemetry_feedback_sent">Thanks. Your technical feedback is saved.</string>
+    <string name="browser_telemetry_privacy">What is shared</string>
+    <string name="browser_telemetry_privacy_body">With your permission, TesAir sends setup steps, permission results, app and device versions, video settings, connection outcomes and performance counters to telemetry.tesair.co.\n\nReports contain no screen content, audio, routes, contacts, messages, Wi-Fi names or passwords. A random ID links reports from this installation across updates. Uninstalling or clearing app data resets it.\n\nDetailed events are deleted after 30 days. Statistics without installation IDs are retained for 90 days. Turn reporting off or delete your shared reports here at any time.</string>
+    <string name="browser_update_settings">App updates</string>
+    <string name="browser_telemetry_infotainment">Test screen (optional)</string>
+    <string name="browser_telemetry_intel">Tesla · Intel</string>
+    <string name="browser_telemetry_ryzen">Tesla · AMD Ryzen</string>
+    <string name="browser_telemetry_other">Other</string>
+    <string name="browser_telemetry_unknown">Not sure</string>
+</resources>

@@ -81,6 +81,37 @@ internal object BrowserReliabilityDiagnostics {
         AsyncDiagnosticLog.awaitIdle(1_000)
         return snapshot(context) + "\n" + SessionLogFile.report(File(context.filesDir, "logs/reliability.log"))
     }
+
+    fun telemetrySample(context: Context) {
+        if (!BrowserTelemetry.enabled(context)) return
+        val output = DiPlaySessionService.currentBrowserOutput()
+        val active = CarPlayBackgroundSession.active || (output?.clientCount ?: 0) > 0
+        runCatching {
+            val power = context.getSystemService(PowerManager::class.java)
+            val memory = ActivityManager.MemoryInfo()
+            context.getSystemService(ActivityManager::class.java)?.getMemoryInfo(memory)
+            val connectivity = context.getSystemService(ConnectivityManager::class.java)
+            val network = connectivity?.activeNetwork?.let(connectivity::getNetworkCapabilities)
+            val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            val level = battery?.getIntExtra(BatteryManager.EXTRA_LEVEL, -1) ?: -1
+            val scale = battery?.getIntExtra(BatteryManager.EXTRA_SCALE, -1) ?: -1
+            BrowserTelemetry.record(context, "reliability_sample", mapOf(
+                "screenOn" to power?.isInteractive, "idle" to power?.isDeviceIdleMode,
+                "powerSave" to power?.isPowerSaveMode, "batteryExempt" to power?.isIgnoringBatteryOptimizations(context.packageName),
+                "thermalStatus" to if (Build.VERSION.SDK_INT >= 29) power?.currentThermalStatus else null,
+                "batteryPercent" to if (level >= 0 && scale > 0) level * 100 / scale else null,
+                "charging" to ((battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0),
+                "lowMemory" to memory.lowMemory, "uplink" to (network != null),
+                "validated" to (network?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true),
+                "wifi" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true),
+                "cellular" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true),
+                "receiverRunning" to (output?.running == true), "browserCount" to (output?.clientCount ?: 0),
+                "iphoneActive" to CarPlayBackgroundSession.active, "videoRendered" to (output?.hasRenderedVideo == true),
+            ))
+            // The existing health tick also records parked battery state. Upload only during use.
+            if (active) BrowserTelemetry.pump(context)
+        }
+    }
 }
 
 /** Foreground-session diagnostics once/minute, plus lightweight pending screen-off verification. */
@@ -94,6 +125,9 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = event("uplink_available")
         override fun onLost(network: Network) = event("uplink_lost")
+        override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
+            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) BrowserTelemetry.pump(app)
+        }
     }
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -128,6 +162,7 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
             if (!closed.get()) {
                 BrowserReliabilityDiagnostics.record(app, BrowserReliabilityDiagnostics.snapshot(app))
                 BrowserAutomaticReport.save(app)
+                BrowserReliabilityDiagnostics.telemetrySample(app)
             }
         }, 0, 60, TimeUnit.SECONDS)
         worker.scheduleWithFixedDelay({

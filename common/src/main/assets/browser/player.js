@@ -42,6 +42,12 @@
   let viewArea = null, pendingViewArea = null;
   const frameArrivals = new Map();
   let timingSamples = 0, decodeTotal = 0, decodeMax = 0, drawTotal = 0, drawMax = 0, timingReportedAt = 0;
+  let metricReceived = 0, metricDecoded = 0, metricDrawn = 0, metricDropped = 0, metricStartedAt = 0, metricQueueMax = 0;
+  let metricDecodeTotal = 0, metricDecodeMax = 0, metricDecodeSamples = 0, requestedFps = 0;
+  function telemetry(name, attributes = {}) {
+    try { if (root.TesAirTelemetry) root.TesAirTelemetry.event(name, attributes); }
+    catch (_) { /* Optional reporting cannot interrupt video or its acknowledgements. */ }
+  }
   function send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
   function diagnostic(event, closeCode = 0, timings = {}) {
     const now = performance.now();
@@ -50,11 +56,29 @@
       closeCode: Number.isInteger(closeCode) ? closeCode : 0, hidden: document.hidden, ...timings};
     if (socket && socket.readyState === WebSocket.OPEN) send(message);
     else pendingDiagnostic = message;
+    if (['decoder_error', 'decoder_unsupported', 'decode_backpressure', 'transport_timeout',
+      'decoder_timeout', 'socket_error', 'packet_error'].includes(event))
+      telemetry('browser_error', {reason: event, errorCode: String(closeCode), queueDepth: message.decodeQueue, result: 'failed'});
+    else if (event === 'page_exit') telemetry('browser_disconnected', {reason: 'page_exit', result: 'normal'});
+    else if (event === 'video_resumed') telemetry('recovery_completed', {source: 'browser', result: 'confirmed'});
   }
   function resetVideoTiming() {
     frameArrivals.clear();
     timingSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
     timingReportedAt = performance.now();
+  }
+  function reportPerformance(now, reason = 'interval') {
+    const duration = now - metricStartedAt;
+    if (duration < 1000 || !metricReceived) return;
+    telemetry('performance_summary', {reason, sampleDurationMs: Math.round(duration),
+      acceptedPackets: metricReceived, decodedFrames: metricDecoded, drawnFrames: metricDrawn,
+      fpsReceived: metricReceived * 1000 / duration, fpsDecoded: metricDecoded * 1000 / duration,
+      fpsRequested: requestedFps, droppedFrames: metricDropped, queueDepth: metricQueueMax,
+      decodeMeanMs: metricDecodeSamples ? metricDecodeTotal / metricDecodeSamples : 0, decodeMaxMs: metricDecodeMax,
+      width: config ? config.codedWidth : 0, height: config ? config.codedHeight : 0});
+    metricReceived = metricDecoded = metricDrawn = metricDropped = metricQueueMax = 0;
+    metricDecodeTotal = metricDecodeMax = metricDecodeSamples = 0;
+    metricStartedAt = now;
   }
   function reportVideoTiming(now) {
     if (!timingSamples || now - timingReportedAt < 5000) return;
@@ -63,6 +87,7 @@
       drawMaxUs: Math.round(drawMax * 1000)});
     timingSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
     timingReportedAt = now;
+    if (now - metricStartedAt >= 30000) reportPerformance(now);
   }
   function status(text) { if (!$('panel').hidden) $('status').textContent = text; }
   function connectionPresentation(title, detail, actionable = false, error = '') {
@@ -108,6 +133,7 @@
         || format.width <= 0 || format.height <= 0 || format.width > 8192 || format.height > 8192
         || typeof format.codec !== 'string') throw new Error('Invalid video format');
     canvas.width = format.width; canvas.height = format.height;
+    requestedFps = Number.isFinite(format.fpsRequested) ? format.fpsRequested : 0;
     config = { codec: format.codec, codedWidth: format.width, codedHeight: format.height,
       // Let the browser use its available hardware decoder or fall back to software.
       optimizeForLatency: true, hardwareAcceleration: 'no-preference' };
@@ -118,14 +144,18 @@
         if (decoder !== next) { frame.close(); return; }
         const area = sourceArea();
         const receivedAt = frameArrivals.get(frame.timestamp), outputAt = performance.now();
+        metricDecoded++;
         frameArrivals.delete(frame.timestamp);
         try {
           context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
+          metricDrawn++;
+          if (!receivedVideo) telemetry('browser_first_frame', {sampleDecoded: true, width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
           // Decode includes browser queueing; draw measures submission, not physical presentation.
           if (receivedAt !== undefined && timingSamples < 10000) {
             const decodeMs = Math.max(0, outputAt - receivedAt), drawMs = Math.max(0, performance.now() - outputAt);
             timingSamples++; decodeTotal += decodeMs; drawTotal += drawMs;
             decodeMax = Math.max(decodeMax, decodeMs); drawMax = Math.max(drawMax, drawMs);
+            metricDecodeTotal += decodeMs; metricDecodeMax = Math.max(metricDecodeMax, decodeMs); metricDecodeSamples++;
           }
           send({ type: 'ack', pts: frame.timestamp });
         }
@@ -139,6 +169,15 @@
     });
     decoder = next;
     decoder.configure(config); needKey = true;
+    telemetry('browser_decoder_ready', {codec: config.codec, width: config.codedWidth, height: config.codedHeight});
+    if (typeof VideoDecoder.isConfigSupported === 'function') {
+      const probeConfig = config;
+      try {
+        VideoDecoder.isConfigSupported(probeConfig).then(result => telemetry('browser_capabilities', {
+          codec: probeConfig.codec, width: probeConfig.codedWidth, height: probeConfig.codedHeight, configSupported: result.supported
+        })).catch(() => telemetry('browser_capabilities', {result: 'unknown'}));
+      } catch (_) { telemetry('browser_capabilities', {result: 'unknown'}); }
+    }
   }
   function sourceArea() {
     return viewArea || {x: 0, y: 0, width: config.codedWidth, height: config.codedHeight,
@@ -160,6 +199,7 @@
   function closeSocket() {
     viewArea = pendingViewArea = null;
     if (!socket) return;
+    reportPerformance(performance.now(), 'connection_ended');
     const previous = socket; socket = null;
     previous.onclose = previous.onmessage = previous.onerror = previous.onopen = null;
     previous.close();
@@ -190,8 +230,11 @@
     clearGesture(); closeSocket();
     connected = false;
     closeDecoder();
+    metricStartedAt = performance.now();
+    try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
     canvas.hidden = true; $('panel').hidden = false; document.body.classList.remove('playing');
     if (!root.isSecureContext || !root.VideoDecoder) {
+      telemetry('browser_error', {reason: !root.isSecureContext ? 'insecure_context' : 'webcodecs_unavailable'});
       status('Browser support required');
       connectionPresentation('Video unavailable', '', true, !root.isSecureContext
         ? 'Open the HTTPS address to connect.' : 'Update the browser to use its video decoder, then try again.');
@@ -214,6 +257,7 @@
         if (current === socket && current.readyState !== WebSocket.OPEN) reconnect('The phone stream did not open in time.');
       }, 10000);
       current.onopen = () => {
+        telemetry('browser_connected', {automatic: reconnectCount > 0});
         clearTimeout(socketTimer);
         connected = true; lastDisplay = ''; status('Connected · waiting for picture');
         connectionPresentation(reconnectCount ? 'Reconnecting…' : 'Connecting…', 'Waiting for CarPlay.');
@@ -240,14 +284,19 @@
                 if (payload.type === 'error') connectionPresentation('Check your phone', '', true, payload.message);
                 else connectionPresentation(reconnectCount ? 'Reconnecting…' : 'Connecting…', payload.message);
               }
+            } else if (payload.type === 'telemetry_consent') {
+              try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
+              if (payload.enabled && receivedVideo) telemetry('browser_first_frame', {source: 'already_drawn', sampleDecoded: true});
             }
             return;
           }
           const packet = parsePacket(event.data);
+          metricReceived++;
           lastPacket = performance.now();
           if (!decoder || decoder.state !== 'configured') return;
-          if (decoder.decodeQueueSize > 3) { diagnostic('decode_backpressure'); recover(); return; }
-          if (needKey && packet.type !== 'key') return;
+          metricQueueMax = Math.max(metricQueueMax, decoder.decodeQueueSize || 0);
+          if (decoder.decodeQueueSize > 3) { metricDropped++; diagnostic('decode_backpressure'); recover(); return; }
+          if (needKey && packet.type !== 'key') { metricDropped++; return; }
           if (packet.type === 'key') needKey = false;
           if (frameArrivals.size >= 16) frameArrivals.delete(frameArrivals.keys().next().value);
           frameArrivals.set(packet.timestamp, performance.now());
@@ -258,6 +307,7 @@
         }
       };
       current.onclose = event => {
+        telemetry('browser_disconnected', {errorCode: String(event.code || 0), reason: leaving ? 'page_exit' : 'socket_closed'});
         diagnostic('socket_closed', event.code);
         reconnect(event.reason || decodeError || 'Connection interrupted. Check that the phone hotspot is connected.');
       };
@@ -342,6 +392,7 @@
     clearGesture();
     diagnostic(document.hidden ? 'page_hidden' : 'page_visible');
     if (!document.hidden) {
+      try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
       if (connected) {
         lastFrame = lastPacket = lastServerMessage = performance.now();
         recoveryRequested = false; scheduleDisplay(); recover();
@@ -359,6 +410,7 @@
     send({ type: 'ping' });
     if (document.hidden) return;
     const now = performance.now(), elapsed = now - lastFrame;
+    if (now - metricStartedAt >= 30000) reportPerformance(now);
     reportVideoTiming(now);
     if (now - lastServerMessage >= 8000) {
       diagnostic('transport_timeout');

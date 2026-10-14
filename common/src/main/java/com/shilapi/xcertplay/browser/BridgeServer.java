@@ -18,6 +18,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 import java.util.function.LongConsumer;
 import org.json.JSONObject;
+import com.shilapi.xcertplay.BrowserTelemetry;
 
 final class BridgeServer extends NanoWSD {
     static final int PORT = 8443;
@@ -29,6 +30,8 @@ final class BridgeServer extends NanoWSD {
     private volatile Consumer<JSONObject> gesture = message -> {};
     private volatile LongConsumer rendered = epoch -> {};
     private volatile Consumer<String> diagnostic = event -> {};
+    private volatile int requestedFps;
+    void setRequestedFps(int fps) { requestedFps = Math.max(0, Math.min(120, fps)); }
     private volatile boolean running = true;
     private volatile Video video;
     private volatile String viewArea;
@@ -77,6 +80,10 @@ final class BridgeServer extends NanoWSD {
             for (Client client : clients) { client.pendingStatus.set(text); client.sendSignal.signal(); }
         } catch (org.json.JSONException ignored) { }
     }
+    void telemetryConsentChanged() {
+        String message = "{\"type\":\"telemetry_consent\",\"enabled\":" + BrowserTelemetry.enabled(context) + "}";
+        for (Client client : clients) { client.pendingConsent.set(message); client.sendSignal.signal(); }
+    }
     synchronized void resetVideo() {
         video = null; epoch++;
         for (Client client : clients) client.reset();
@@ -85,7 +92,8 @@ final class BridgeServer extends NanoWSD {
         Video previous = video;
         if (previous != null && previous.width == width && previous.height == height && Arrays.equals(previous.config, config)) return;
         String json = new JSONObject().put("type", "format").put("codec", VideoFormat.codec(config))
-                .put("width", width).put("height", height).put("generation", ++epoch).toString();
+                .put("width", width).put("height", height).put("generation", ++epoch)
+                .put("fpsRequested", requestedFps).toString();
         video = new Video(config.clone(), json, epoch, width, height);
         for (Client client : clients) client.reset();
     }
@@ -111,6 +119,13 @@ final class BridgeServer extends NanoWSD {
         return host != null && ("https://" + host).equals(session.getHeaders().get("origin"));
     }
     @Override protected Response serveHttp(IHTTPSession session) {
+        if ("/telemetry".equals(session.getUri()) && session.getMethod() == Method.GET)
+            return reply(Response.Status.OK, "application/json", "{\"enabled\":" + BrowserTelemetry.enabled(context) + "}");
+        if ("/diagnostics".equals(session.getUri()) && session.getMethod() == Method.POST) {
+            if (!running || !sameOrigin(session)) return reply(Response.Status.FORBIDDEN, "text/plain", "Open the display address directly.");
+            if (!BrowserTelemetry.enabled(context)) return reply(Response.Status.OK, "application/json", "{\"ok\":true}");
+            return browserTelemetry(session);
+        }
         if ("/session".equals(session.getUri()) && session.getMethod() == Method.POST) {
             if (!running || !sameOrigin(session)) return reply(Response.Status.FORBIDDEN, "text/plain", "Open the display address directly.");
             if (!"application/json".equals(session.getHeaders().get("content-type"))
@@ -125,7 +140,8 @@ final class BridgeServer extends NanoWSD {
         }
         if (session.getMethod() != Method.GET) return reply(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "GET required");
         String path = session.getUri();
-        String file = "/".equals(path) || "/index.html".equals(path) ? "index.html" : "/player.js".equals(path) ? "player.js" : null;
+        String file = "/".equals(path) || "/index.html".equals(path) ? "index.html" : "/player.js".equals(path) ? "player.js"
+                : "/telemetry.js".equals(path) ? "telemetry.js" : null;
         if (file == null) return reply(Response.Status.NOT_FOUND, "text/plain", "Not found");
         try (InputStream input = context.getAssets().open("browser/" + file)) {
             java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
@@ -134,6 +150,38 @@ final class BridgeServer extends NanoWSD {
             return reply(Response.Status.OK, file.endsWith(".js") ? "text/javascript" : "text/html; charset=utf-8",
                     out.toString(StandardCharsets.UTF_8.name()));
         } catch (IOException error) { return reply(Response.Status.INTERNAL_ERROR, "text/plain", "Player unavailable"); }
+    }
+    private long telemetryWindow, telemetryCount;
+    private synchronized boolean acceptTelemetry() {
+        long now = SystemClock.elapsedRealtime();
+        if (now - telemetryWindow >= 60000) { telemetryWindow = now; telemetryCount = 0; }
+        return ++telemetryCount <= 60;
+    }
+    private Response browserTelemetry(IHTTPSession session) {
+        if (!acceptTelemetry()) return reply(Response.Status.TOO_MANY_REQUESTS, "text/plain", "Try later.");
+        try {
+            int length = Integer.parseInt(session.getHeaders().getOrDefault("content-length", "0"));
+            if (length <= 0 || length > 4096 || session.getHeaders().containsKey("transfer-encoding")
+                    || !"application/json".equals(session.getHeaders().get("content-type")))
+                return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid diagnostic request.");
+            byte[] bytes = new byte[length]; new java.io.DataInputStream(session.getInputStream()).readFully(bytes);
+            JSONObject body = new JSONObject(new String(bytes, StandardCharsets.UTF_8));
+            String name = body.optString("name");
+            if (!java.util.Arrays.asList("browser_page_loaded", "browser_capabilities", "browser_connected",
+                    "browser_disconnected", "browser_decoder_ready", "browser_first_frame", "browser_error", "performance_summary", "recovery_completed").contains(name))
+                return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid diagnostic event.");
+            JSONObject input = body.optJSONObject("attributes");
+            java.util.Map<String, Object> attributes = new java.util.HashMap<>();
+            if (input != null && input.length() <= 32) {
+                java.util.Iterator<String> keys = input.keys();
+                while (keys.hasNext()) { String key = keys.next(); Object value = input.get(key);
+                    if (value instanceof String || value instanceof Boolean || value instanceof Number) attributes.put(key, value);
+                }
+            }
+            // The shared collector enforces the same field allowlist as the hosted service.
+            BrowserTelemetry.record(context, name, attributes);
+            return reply(Response.Status.OK, "application/json", "{\"ok\":true}");
+        } catch (Exception error) { return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid diagnostic request."); }
     }
     private static Response reply(Response.Status status, String type, String text) {
         Response response = newFixedLengthResponse(status, type, text);
@@ -166,6 +214,8 @@ final class BridgeServer extends NanoWSD {
         private final FrameQueue queue = new FrameQueue();
         private final AtomicBoolean alive = new AtomicBoolean();
         private final AtomicReference<String> pendingStatus = new AtomicReference<>();
+        // A regular status update must not replace an unsent consent change.
+        private final AtomicReference<String> pendingConsent = new AtomicReference<>();
         private final AtomicBoolean pendingPong = new AtomicBoolean();
         private final AtomicBoolean closeRecorded = new AtomicBoolean();
         private final ConcurrentHashMap<Long, SentFrame> sentFrames = new ConcurrentHashMap<>();
@@ -201,6 +251,7 @@ final class BridgeServer extends NanoWSD {
                 while (alive.get() && running) {
                     long observedWake = sendSignal.version();
                     String timings = latency.report(System.nanoTime()); if (timings != null) record(timings);
+                    String consent = pendingConsent.getAndSet(null); if (consent != null) send(consent);
                     String text = pendingStatus.getAndSet(null); if (text != null) send(text);
                     if (pendingPong.getAndSet(false)) send("{\"type\":\"pong\"}");
                     String area = viewArea;
@@ -307,6 +358,7 @@ final class BridgeServer extends NanoWSD {
         }
         private void finish() {
             boolean wasAlive = alive.getAndSet(false); clients.remove(this); reset();
+            pendingConsent.set(null);
             if (sender != null && sender != Thread.currentThread()) sender.interrupt();
             if (wasAlive) connectionChanged.run();
         }

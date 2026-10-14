@@ -18,7 +18,7 @@ import sys
 
 GENERATED_DIRECTORIES = {
     ".git", ".gradle", ".kotlin", ".cxx", ".externalNativeBuild",
-    ".android-sdk", "build", "__pycache__", ".pytest_cache", "node_modules",
+    ".android-sdk", "build", "__pycache__", ".pytest_cache", "node_modules", ".wrangler",
 }
 PRIVATE_DIRECTORIES = {
     ".private", ".build-tools", ".aws", ".ssh", ".secrets", "offline-mfi", "captures",
@@ -27,7 +27,7 @@ PRIVATE_DIRECTORIES = {
 PRIVATE_FILES = {
     "local.properties", "release-signing.properties", "keystore.properties", "signing.json",
     "google-services.json", "service-account.json", "credentials.json",
-    "secrets.json", "certificates.json", "bundle.json",
+    "secrets.json", "certificates.json", "bundle.json", "wrangler-account.json",
 }
 FORBIDDEN_SUFFIXES = {
     ".pk8", ".p7b", ".pem", ".key", ".p12", ".pfx", ".jks",

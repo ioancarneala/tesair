@@ -65,6 +65,10 @@ class BrowserOnboardingActivity : ComponentActivity() {
     private var backgroundSignature = ""
     private var readyVerified = false
     private var startFailed = false
+    private var viewedStep: Step? = null
+    private var stepVisibleAt = 0L
+    private var stepVisibleMs = 0L
+    private var telemetryConsent: AlertDialog? = null
     private val draft by lazy { ViewModelProvider(this)[BrowserOnboardingDraft::class.java] }
     internal var certificateSyncFactory: (Context) -> SharedCertificateSync = {
         SharedCertificateSync(it, BuildConfig.BROWSER_CERTIFICATE_ENDPOINT,
@@ -73,11 +77,13 @@ class BrowserOnboardingActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionDenied = !hasPermissions()
+        BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "wireless", "result" to if (permissionDenied) "denied" else "allowed"))
         render()
     }
     private val vpn = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         awaitingRoute = false
         if (it.resultCode == RESULT_OK) BrowserAddressService.enable(this)
+        BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "local_route", "result" to if (it.resultCode == RESULT_OK) "allowed" else "denied"))
         render()
     }
     private val refresh = object : Runnable {
@@ -135,6 +141,10 @@ class BrowserOnboardingActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        stepVisibleAt = android.os.SystemClock.elapsedRealtime()
+        BrowserTelemetry.record(this, "app_opened", mapOf("source" to "onboarding"))
+        BrowserTelemetry.pump(this)
+        recordReadiness()
         if (step.ordinal > Step.BACKGROUND.ordinal && !BrowserOnboardingProgress.approvalsAllowed(this)) {
             move(Step.BACKGROUND)
             return
@@ -144,6 +154,8 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     override fun onPause() {
+        stopVisibleTime()
+        BrowserTelemetry.record(this, "app_backgrounded", mapOf("source" to "onboarding", "step" to step.name))
         concealPassword()
         super.onPause()
     }
@@ -156,6 +168,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        telemetryConsent?.dismiss()
         handler.removeCallbacks(refresh)
         closeCertificateSync()
         super.onDestroy()
@@ -174,6 +187,12 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     private fun move(destination: Step) {
+        stopVisibleTime()
+        if (destination.ordinal > step.ordinal) BrowserTelemetry.record(this, "onboarding_step_completed",
+            mapOf("step" to step.name, "targetStep" to destination.name,
+                "direction" to "forward", "visibleDurationMs" to stepVisibleMs))
+        stepVisibleMs = 0
+        stepVisibleAt = android.os.SystemClock.elapsedRealtime()
         concealPassword()
         step = destination
         if (!contextualHelp) BrowserOnboardingProgress.moveTo(this, destination)
@@ -181,6 +200,10 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     private fun render() {
+        if (viewedStep != step) {
+            viewedStep = step
+            BrowserTelemetry.record(this, "onboarding_step_viewed", mapOf("step" to step.name, "onboardingRevision" to 1))
+        }
         backgroundSignature = backgroundState()
         status = null
         address = null
@@ -241,6 +264,17 @@ class BrowserOnboardingActivity : ComponentActivity() {
         motion.update(content, step)
     }
 
+    private fun stopVisibleTime() {
+        if (stepVisibleAt > 0) stepVisibleMs += (android.os.SystemClock.elapsedRealtime() - stepVisibleAt).coerceAtLeast(0)
+        stepVisibleAt = 0
+    }
+
+    private fun recordReadiness() {
+        BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "wireless", "source" to "snapshot", "result" to if (hasPermissions()) "allowed" else "not_granted"))
+        BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "background", "source" to "snapshot", "result" to if (batteryAllowed()) "allowed" else "not_granted"))
+        BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "local_route", "source" to "snapshot", "result" to if (BrowserOnboardingProgress.localAddressApproved(this)) "allowed" else "not_granted"))
+    }
+
     private fun heading(title: Int, body: Int, scene: BrowserOnboardingArtView.Scene, device: Int? = null) {
         device?.let { label(getString(it), 12, true, top = 24) }
         label(getString(title), 32, true, top = if (device == null) 24 else 10).isAccessibilityHeading = true
@@ -254,7 +288,14 @@ class BrowserOnboardingActivity : ComponentActivity() {
     private fun welcome() {
         heading(R.string.onboarding_welcome_title, R.string.onboarding_welcome_body, BrowserOnboardingArtView.Scene.WELCOME)
         label(getString(R.string.onboarding_welcome_needs), 16)
-        action(R.string.onboarding_begin, true) { move(Step.NETWORK) }
+        action(R.string.onboarding_begin, true) {
+            if (BrowserTelemetry.choice(this) == "unset") {
+                telemetryConsent = BrowserTelemetryConsent.show(this) {
+                    BrowserTelemetry.record(this, "onboarding_step_viewed", mapOf("step" to Step.WELCOME.name, "onboardingRevision" to 1))
+                    move(Step.NETWORK)
+                }
+            } else move(Step.NETWORK)
+        }
     }
 
     private fun network() {
@@ -307,6 +348,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
             val passphrase = secret.text.toString()
             val problem = ManualHotspotValidation.error(ssid, passphrase)
             if (problem != null) {
+                BrowserTelemetry.record(this, "onboarding_step_blocked", mapOf("step" to step.name, "errorCode" to problem.name))
                 val text = getString(problem.messageResource())
                 error?.text = text
                 error?.visibility = View.VISIBLE
@@ -322,6 +364,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     private fun saveNetwork(ssid: String, secret: String) {
+        BrowserTelemetry.record(this, "configuration_saved", mapOf("transport" to "manual_hotspot", "step" to step.name))
         val changed = AirPlayPersistence.loadWirelessHotspotMode(this) != WirelessHotspotMode.MANUAL ||
             networkName() != ssid || networkPassword() != secret
         // Preserve imported WPA3 metadata if the user saves unchanged credentials.
@@ -352,7 +395,10 @@ class BrowserOnboardingActivity : ComponentActivity() {
                 if (permissionDenied) label(getString(R.string.onboarding_permission_denied), 14)
                 action(if (needsSettings) R.string.onboarding_app_settings else R.string.onboarding_permissions_action, true) {
                     if (needsSettings) openSystem(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
-                    else permissions.launch(requiredPermissions().toTypedArray())
+                    else {
+                        BrowserTelemetry.record(this, "permission_requested", mapOf("permission" to "wireless"))
+                        permissions.launch(requiredPermissions().toTypedArray())
+                    }
                 }
             }
             !batteryAllowed() -> {
@@ -360,6 +406,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
                     if (BrowserBackgroundReadiness.snapshot(this).restricted == true) R.string.browser_background_restricted
                     else R.string.onboarding_battery_body)
                 action(R.string.onboarding_battery_action, true) {
+                    BrowserTelemetry.record(this, "permission_requested", mapOf("permission" to "background"))
                     if (!BrowserBackgroundReadiness.request(this)) {
                         AlertDialog.Builder(this).setMessage(R.string.browser_battery_unavailable)
                             .setPositiveButton(android.R.string.ok, null).show()
@@ -525,8 +572,14 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     private fun requestStart() {
-        if (!BrowserOnboardingProgress.approvalsAllowed(this)) { move(Step.BACKGROUND); return }
-        if (DiPlayPreferences.phoneAddress(this).isNullOrBlank()) { choosePhone(); return }
+        if (!BrowserOnboardingProgress.approvalsAllowed(this)) {
+            BrowserTelemetry.record(this, "onboarding_step_blocked", mapOf("step" to step.name, "reason" to "approvals_required"))
+            move(Step.BACKGROUND); return
+        }
+        if (DiPlayPreferences.phoneAddress(this).isNullOrBlank()) {
+            BrowserTelemetry.record(this, "onboarding_step_blocked", mapOf("step" to step.name, "reason" to "iphone_not_selected"))
+            choosePhone(); return
+        }
         val controller = CarPlayBackgroundSession.snapshot()?.controller
         if (PendingReconnect.isPending(controller)) {
             AlertDialog.Builder(this).setTitle(R.string.onboarding_reconnect_title)
@@ -537,6 +590,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
     }
 
     private fun startReceiver(reconnect: Boolean) {
+        BrowserTelemetry.record(this, "receiver_start_requested", mapOf("automatic" to false, "source" to "onboarding", "manualIntervention" to true))
         startFailed = false
         closeCertificateSync()
         AirPlayPersistence.saveWirelessEnabled(this, true)
@@ -544,6 +598,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
         try {
             startForegroundService(Intent(this, DiPlaySessionService::class.java).apply {
                 action = if (reconnect) DiPlaySessionService.ACTION_RECONNECT else DiPlaySessionService.ACTION_RECOVER
+                putExtra(DiPlaySessionService.EXTRA_MANUAL_START, true)
             })
             updateLiveState()
         } catch (_: RuntimeException) {
@@ -589,7 +644,10 @@ class BrowserOnboardingActivity : ComponentActivity() {
         try {
             val consent = VpnService.prepare(this)
             if (consent == null) BrowserAddressService.enable(this)
-            else { awaitingRoute = true; vpn.launch(consent) }
+            else {
+                BrowserTelemetry.record(this, "permission_requested", mapOf("permission" to "local_route"))
+                awaitingRoute = true; vpn.launch(consent)
+            }
         } catch (_: RuntimeException) {
             AlertDialog.Builder(this).setMessage(R.string.browser_address_error)
                 .setPositiveButton(android.R.string.ok, null).show()

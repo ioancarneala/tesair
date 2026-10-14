@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_update_title">التحديثات</string>
+    <string name="browser_update_back">رجوع</string>
+    <string name="browser_update_channel">تحديثات التطبيق</string>
+    <string name="browser_update_available">يتوفر TesAir %1$s</string>
+    <string name="browser_update_notification">افتح TesAir لتنزيل التحديث.</string>
+    <string name="browser_update_ready">نزّل أحدث إصدار. سيطلب منك Android تأكيد التثبيت.</string>
+    <string name="browser_update_checking">جارٍ البحث عن تحديثات…</string>
+    <string name="browser_update_current">لديك أحدث إصدار.</string>
+    <string name="browser_update_offline">تعذّر البحث عن تحديثات. اتصل بالإنترنت وحاول مجددًا.</string>
+    <string name="browser_update_offline_available">تم العثور على تحديث سابقًا. اتصل بالإنترنت لتنزيله.</string>
+    <string name="browser_update_download">تنزيل التحديث</string>
+    <string name="browser_update_install">تثبيت التحديث</string>
+    <string name="browser_update_check">التحقق مجددًا</string>
+    <string name="browser_update_keeps_settings">ستبقى إعداداتك محفوظة.</string>
+    <string name="browser_update_downloading">جارٍ التنزيل…</string>
+    <string name="browser_update_downloaded">جاهز للتثبيت.</string>
+    <string name="browser_update_verifying">جارٍ التحقق من التحديث…</string>
+    <string name="browser_update_download_failed">تعذّر تنزيل التحديث أو التحقق منه. حاول مجددًا.</string>
+    <string name="browser_update_carplay_active">أنه جلسة CarPlay قبل تثبيت التحديث.</string>
+    <string name="browser_update_source_required">اسمح بالتحديثات من TesAir في إعدادات Android، ثم اضغط على تثبيت التحديث.</string>
+    <string name="browser_update_confirm_android">أكّد التحديث في Android. يمكنك أيضًا تثبيته لاحقًا.</string>
+    <string name="browser_update_install_failed">تعذّر على Android فتح برنامج التثبيت. حاول مجددًا.</string>
+</resources>
