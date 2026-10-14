@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="browser_update_title">更新</string>
+    <string name="browser_update_whats_new">更新内容</string>
     <string name="browser_update_back">返回</string>
     <string name="browser_update_channel">应用更新</string>
     <string name="browser_update_available">TesAir %1$s 已发布</string>

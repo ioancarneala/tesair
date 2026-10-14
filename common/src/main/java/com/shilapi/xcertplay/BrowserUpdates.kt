@@ -72,7 +72,8 @@ internal object BrowserUpdates {
         val prefs = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         val now = System.currentTimeMillis()
         val previous = prefs.getLong("last_check", 0)
-        if (!BrowserUpdatePolicy.shouldCheck(now, previous, force)) {
+        if (!BrowserUpdatePolicy.shouldCheck(now, previous, force, prefs.getBoolean("last_error", false))) {
+            notifyCached(app)
             main.post { callback(BrowserUpdateState(cached(app), prefs.getBoolean("last_error", false))) }
             return
         }
@@ -99,7 +100,7 @@ internal object BrowserUpdates {
                 if (newer != null) runCatching { notifyOnce(app, newer) }
                 BrowserUpdateState(newer)
             } catch (_: Exception) {
-                // Failed checks back off as well; opening the screen offers an explicit retry.
+                // Retry offline checks sooner than successful checks, without polling the network on every connection.
                 prefs.edit().putLong("last_check", now).putBoolean("last_error", true).apply()
                 BrowserUpdateState(cached(app), error = true)
             }

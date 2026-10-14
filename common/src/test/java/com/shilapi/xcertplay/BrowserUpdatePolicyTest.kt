@@ -29,6 +29,20 @@ class BrowserUpdatePolicyTest {
 
     @Test fun noPublishedUpdateIsValid() {
         assertNull(BrowserUpdatePolicy.parseResponse("{\"schemaVersion\":1,\"update\":null}"))
+        assertTrue(runCatching { BrowserUpdatePolicy.parseResponse("{\"schemaVersion\":1}") }.isFailure)
+    }
+
+    @Test fun releaseNotesRemainAvailableAfterCachingAndOldMetadataStillWorks() {
+        val notes = "Clearer iPhone setup.\nFaster automatic recovery."
+        val parsed = BrowserUpdatePolicy.parse(update().put("notes", notes))
+        assertEquals(notes, parsed.notes)
+        assertEquals(notes, BrowserUpdatePolicy.parse(BrowserUpdatePolicy.json(parsed)).notes)
+        assertEquals("", BrowserUpdatePolicy.parse(update()).notes)
+    }
+
+    @Test fun malformedOversizedAndControlCharacterReleaseNotesAreRejected() {
+        listOf("a".repeat(1001), "invisible\u0000text", JSONObject().put("html", "not text"), JSONObject.NULL)
+            .forEach { notes -> assertTrue(runCatching { BrowserUpdatePolicy.parse(update().put("notes", notes)) }.isFailure) }
     }
 
     @Test fun rejectsUntrustedSourcesMalformedChecksumsAndDifferentPackages() {
@@ -69,5 +83,16 @@ class BrowserUpdatePolicyTest {
         assertTrue(BrowserUpdatePolicy.shouldCheck(1_800_000_000_000L, 0, false))
         assertTrue(BrowserUpdatePolicy.shouldCheck(0, 0, false))
         assertTrue(BrowserUpdatePolicy.shouldCheck(1_800_000_000_000L, 1_800_000_000_001L, false))
+    }
+
+    @Test fun offlineFailureRetriesAfterFifteenMinutesWithoutLosingTheSuccessfulDailyLimit() {
+        val checkedAt = 1_800_000_000_000L
+        assertFalse(BrowserUpdatePolicy.shouldCheck(checkedAt + BrowserUpdatePolicy.RETRY_INTERVAL_MS - 1,
+            checkedAt, force = false, lastError = true))
+        assertTrue(BrowserUpdatePolicy.shouldCheck(checkedAt + BrowserUpdatePolicy.RETRY_INTERVAL_MS,
+            checkedAt, force = false, lastError = true))
+        assertFalse(BrowserUpdatePolicy.shouldCheck(checkedAt + BrowserUpdatePolicy.RETRY_INTERVAL_MS,
+            checkedAt, force = false, lastError = false))
+        assertTrue(BrowserUpdatePolicy.shouldCheck(checkedAt, checkedAt, force = true, lastError = true))
     }
 }

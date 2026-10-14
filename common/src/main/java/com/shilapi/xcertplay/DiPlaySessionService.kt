@@ -43,6 +43,7 @@ class DiPlaySessionService : Service() {
     private val browserMaintenance = object : Runnable {
         override fun run() {
             if (!browserRequested) return
+            BrowserUpdates.check(this@DiPlaySessionService)
             if (browserStarted && currentBrowserOutput()?.running == true) {
                 val address = BrowserAddressService.snapshot(this@DiPlaySessionService)
                 if (address.enabled && !address.active && !address.busy) {

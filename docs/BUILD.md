@@ -80,11 +80,22 @@ python3 scripts/generate-update-manifest.py \
   mobile/build/outputs/apk/release/mobile-release.apk \
   --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" \
   --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+  --notes ../dist/release-summary.txt \
   --output ../dist/update.json
 ```
 
-Attach `update.json` beside `TesAir-vVERSION.apk` in the matching stable GitHub
-release. Keep these generated files outside the source tree. The app offers the
-update after checking the package, version, checksum and existing signing key;
-installation always requires a user action. The optional reporting service and
+Use a short plain-text changelog (up to 1,000 characters) in `release-summary.txt`.
+Attach `update.json` beside `TesAir-vVERSION.apk` before publishing the matching
+stable GitHub release. Keep these generated files outside the source tree.
+
+The **Release update metadata** workflow also verifies the published APK and
+generates its metadata when a stable release is published or edited. It takes the
+changelog from the release's **What's new** section. Publish releases with your
+GitHub account; events created using `GITHUB_TOKEN` do not trigger this workflow.
+
+From v1.0.4, the running app checks daily for releases, retries failed checks after
+15 minutes, and shows the changelog before downloading. Users can also check
+manually in **Settings → App updates**. The APK's package, version, checksum and
+existing signing key are verified; installation requires Android confirmation.
+The optional reporting service and
 private analysis commands are documented in [backend/telemetry](../backend/telemetry/README.md).

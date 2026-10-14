@@ -35,6 +35,8 @@ class BrowserUpdateActivity : ComponentActivity() {
     private val cancelled = AtomicBoolean(false)
     private lateinit var title: TextView
     private lateinit var detail: TextView
+    private lateinit var releaseNotes: LinearLayout
+    private lateinit var releaseNotesText: TextView
     private lateinit var progress: ProgressBar
     private lateinit var action: Button
     private lateinit var retry: Button
@@ -91,6 +93,16 @@ class BrowserUpdateActivity : ComponentActivity() {
         content.addView(title, margins(12))
         detail = BrowserDesign.setupText(this, 16)
         content.addView(detail, margins(12))
+        releaseNotes = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            visibility = android.view.View.GONE
+            addView(BrowserDesign.setupText(this@BrowserUpdateActivity, 16, true).apply {
+                setText(R.string.browser_update_whats_new)
+            })
+            releaseNotesText = BrowserDesign.setupText(this@BrowserUpdateActivity, 16)
+            addView(releaseNotesText, margins(8))
+        }
+        content.addView(releaseNotes, margins(24))
         progress = ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
             max = 100
             isIndeterminate = true
@@ -175,7 +187,12 @@ class BrowserUpdateActivity : ComponentActivity() {
         action.isEnabled = false
         updateChecker(true) checked@ { state ->
             if (isFinishing || isDestroyed) return@checked
+            if (available?.versionCode != state.update?.versionCode || available?.sha256 != state.update?.sha256) {
+                downloaded = null
+            }
             available = state.update
+            releaseNotesText.text = state.update?.notes.orEmpty()
+            releaseNotes.visibility = if (state.update?.notes?.isNotBlank() == true) android.view.View.VISIBLE else android.view.View.GONE
             retry.isEnabled = true
             if (state.update != null) {
                 title.text = getString(R.string.browser_update_available, state.update.versionName)

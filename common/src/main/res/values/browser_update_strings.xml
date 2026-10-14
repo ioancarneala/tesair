@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="browser_update_title">Updates</string>
+    <string name="browser_update_whats_new">What’s new</string>
     <string name="browser_update_back">Back</string>
     <string name="browser_update_channel">App updates</string>
     <string name="browser_update_available">TesAir %1$s is available</string>

@@ -13,6 +13,7 @@ import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.TextView
 import com.shilapi.xcertplay.host.R
 import org.junit.After
 import org.junit.Assert.*
@@ -157,10 +158,41 @@ class BrowserUpdateNotificationsTest {
         assertEquals(1, shadowOf(manager).allNotifications.size)
     }
 
-    private fun open(): BrowserUpdateActivity {
+    @Test fun releaseNotesAreVisibleBeforeDownloadEvenWhenNotificationsAreDenied() {
+        val update = BrowserUpdateInfo("1.0.5", 67,
+            "https://github.com/ioancarneala/tesair/releases/download/v1.0.5/TesAir-v1.0.5.apk", "11".repeat(32),
+            "Clearer iPhone setup.\nMore reliable reconnection.")
+        val screen = open(BrowserUpdateState(update))
+        val text = descendants(screen.window.decorView).filterIsInstance<TextView>().toList()
+        assertTrue(text.single { it.text == screen.getString(R.string.browser_update_whats_new) }.isShown)
+        assertTrue(text.single { it.text == update.notes }.isShown)
+        assertTrue(button(screen, R.string.browser_update_download).isEnabled)
+        assertFalse(BrowserUpdates.notificationsEnabled(screen))
+    }
+
+    @Test fun cachedReleaseNotesStayVisibleWhenTheLatestCheckIsOffline() {
+        val update = BrowserUpdateInfo("1.0.5", 67,
+            "https://github.com/ioancarneala/tesair/releases/download/v1.0.5/TesAir-v1.0.5.apk", "11".repeat(32),
+            "Saved release notes.")
+        val screen = open(BrowserUpdateState(update, error = true))
+        assertTrue(descendants(screen.window.decorView).filterIsInstance<TextView>()
+            .single { it.text == update.notes }.isShown)
+        assertTrue(button(screen, R.string.browser_update_download).isEnabled)
+    }
+
+    @Test fun oldMetadataWithoutReleaseNotesDoesNotShowAnEmptyHeading() {
+        val update = BrowserUpdateInfo("1.0.5", 67,
+            "https://github.com/ioancarneala/tesair/releases/download/v1.0.5/TesAir-v1.0.5.apk", "11".repeat(32))
+        val screen = open(BrowserUpdateState(update))
+        assertFalse(descendants(screen.window.decorView).filterIsInstance<TextView>()
+            .single { it.text == screen.getString(R.string.browser_update_whats_new) }.isShown)
+        assertTrue(button(screen, R.string.browser_update_download).isEnabled)
+    }
+
+    private fun open(state: BrowserUpdateState = BrowserUpdateState()): BrowserUpdateActivity {
         lifecycle = Robolectric.buildActivity(BrowserUpdateActivity::class.java)
         val screen = lifecycle!!.get()
-        screen.updateChecker = { _, result -> checks++; result(BrowserUpdateState()) }
+        screen.updateChecker = { _, result -> checks++; result(state) }
         lifecycle!!.create().start().resume().visible()
         return screen
     }

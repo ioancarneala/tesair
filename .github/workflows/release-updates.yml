@@ -1,0 +1,88 @@
+name: Release update metadata
+
+on:
+  release:
+    types: [published, edited]
+
+permissions: {}
+
+concurrency:
+  group: release-update-${{ github.event.release.id }}
+  cancel-in-progress: false
+
+jobs:
+  metadata:
+    if: github.repository == 'ioancarneala/tesair' && !github.event.release.draft && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: false
+      - name: Read current release and validate its APK asset
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_ID: ${{ github.event.release.id }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/tesair-release"
+          gh api "repos/$GITHUB_REPOSITORY/releases/$RELEASE_ID" > "$RUNNER_TEMP/tesair-release/release.json"
+          python3 - "$RUNNER_TEMP/tesair-release/release.json" "$GITHUB_OUTPUT" <<'PY'
+          import json, re, sys
+          from pathlib import Path
+          release = json.loads(Path(sys.argv[1]).read_text())
+          tag = release.get("tag_name", "")
+          if not re.fullmatch(r"v[0-9]+\.[0-9]+\.[0-9]+", tag) or len(tag) > 31:
+              raise SystemExit("Expected a stable TesAir version tag")
+          if release.get("draft") is not False or release.get("prerelease") is not False:
+              raise SystemExit("Release is no longer published and stable")
+          name = f"TesAir-{tag}.apk"
+          assets = [asset for asset in release.get("assets", []) if asset.get("name") == name]
+          if len(assets) != 1 or assets[0].get("state") != "uploaded" or not 0 < assets[0].get("size", 0) <= 128 * 1024 * 1024:
+              raise SystemExit("Expected one complete release APK no larger than 128 MiB")
+          with open(sys.argv[2], "a") as output:
+              output.write(f"tag={tag}\napk={name}\n")
+              output.write(f"has_manifest={str(any(asset.get('name') == 'update.json' for asset in release.get('assets', []))).lower()}\n")
+          PY
+      - name: Download the exact signed APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          APK_NAME: ${{ steps.release.outputs.apk }}
+        run: gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern "$APK_NAME" --dir "$RUNNER_TEMP/tesair-release"
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '25'
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: build-tools;36.0.0
+      - name: Verify APK and generate its update manifest
+        env:
+          APK_NAME: ${{ steps.release.outputs.apk }}
+        run: |
+          python3 scripts/generate-update-manifest.py "$RUNNER_TEMP/tesair-release/$APK_NAME" \
+            --aapt "$ANDROID_HOME/build-tools/36.0.0/aapt" \
+            --apksigner "$ANDROID_HOME/build-tools/36.0.0/apksigner" \
+            --release-json "$RUNNER_TEMP/tesair-release/release.json" \
+            --output "$RUNNER_TEMP/tesair-release/update.json"
+      - name: Publish verified metadata when changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+          HAS_MANIFEST: ${{ steps.release.outputs.has_manifest }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/tesair-release/existing"
+          if [ "$HAS_MANIFEST" = true ]; then
+            gh release download "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --pattern update.json \
+              --dir "$RUNNER_TEMP/tesair-release/existing"
+            if cmp -s "$RUNNER_TEMP/tesair-release/update.json" "$RUNNER_TEMP/tesair-release/existing/update.json"; then
+              echo 'Verified update metadata is already current.'
+              exit 0
+            fi
+          fi
+          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/tesair-release/update.json" \
+            --repo "$GITHUB_REPOSITORY" --clobber

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="browser_update_title">التحديثات</string>
+    <string name="browser_update_whats_new">ما الجديد</string>
     <string name="browser_update_back">رجوع</string>
     <string name="browser_update_channel">تحديثات التطبيق</string>
     <string name="browser_update_available">يتوفر TesAir %1$s</string>

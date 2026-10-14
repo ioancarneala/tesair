@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="browser_update_title">Обновления</string>
+    <string name="browser_update_whats_new">Что нового</string>
     <string name="browser_update_back">Назад</string>
     <string name="browser_update_channel">Обновления приложения</string>
     <string name="browser_update_available">Доступна версия TesAir %1$s</string>
