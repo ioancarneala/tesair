@@ -169,8 +169,8 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <!-- ACTION_POWER_CONNECTED/DISCONNECTED are implicit-broadcast-exempt, so a manifest
-                     receiver keeps working on every Android 8+ device without an OEM quirk. -->
+                <!-- Optional firmware delivery: power broadcasts are restricted for manifest receivers
+                     on Android 8+. The running session service observes charging dynamically. -->
                 <action android:name="android.intent.action.ACTION_POWER_CONNECTED" />
                 <action android:name="android.intent.action.ACTION_POWER_DISCONNECTED" />
             </intent-filter>

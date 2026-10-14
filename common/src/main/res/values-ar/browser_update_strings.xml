@@ -22,4 +22,8 @@
     <string name="browser_update_source_required">اسمح بالتحديثات من TesAir في إعدادات Android، ثم اضغط على تثبيت التحديث.</string>
     <string name="browser_update_confirm_android">أكّد التحديث في Android. يمكنك أيضًا تثبيته لاحقًا.</string>
     <string name="browser_update_install_failed">تعذّر على Android فتح برنامج التثبيت. حاول مجددًا.</string>
+    <string name="browser_update_alerts_enable">إشعاري بالتحديثات</string>
+    <string name="browser_update_alerts_enabled">إشعارات التحديث مفعّلة</string>
+    <string name="browser_update_alerts_settings">إعدادات الإشعارات</string>
+    <string name="browser_update_alerts_unavailable">افتح إعدادات Android للسماح بإشعارات TesAir.</string>
 </resources>

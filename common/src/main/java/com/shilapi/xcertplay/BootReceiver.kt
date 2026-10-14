@@ -6,10 +6,10 @@ import android.content.Intent
 import android.util.Log
 
 /**
- * Starts or resumes the CarPlay host after boot and when external power returns.
+ * Starts or resumes the CarPlay host after boot or an app update.
  *
- * The browser build keeps a phone installed in the car. Its USB power drops when the car is off,
- * so the session must resume automatically when power returns instead of waiting for a reboot.
+ * Power-return recovery is best effort on firmware that delivers manifest power broadcasts.
+ * The running foreground service observes charging dynamically and owns sticky session recovery.
  */
 class BootReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {

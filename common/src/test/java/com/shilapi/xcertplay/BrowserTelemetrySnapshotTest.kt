@@ -117,7 +117,11 @@ class BrowserTelemetrySnapshotTest {
         assertEquals("allowed", permissionResults(all)["local_route"])
     }
 
-    @Test fun snapshotDistinguishesBluetoothAccessFromAMissingLocationGrant() {
+    @Test fun managedHotspotSnapshotDistinguishesBluetoothAccessFromAMissingLocationGrant() {
+        AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.WIFI_P2P)
+        assertEquals(WirelessHotspotMode.WIFI_P2P, AirPlayPersistence.loadWirelessHotspotMode(app))
+        shadowOf(app).denyPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT,
+            WirelessHotspotMode.WIFI_P2P).toTypedArray())
         shadowOf(app).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.ACCESS_COARSE_LOCATION)
         engine.setEnabled(true)
         assertTrue(engine.awaitIdle())
@@ -128,7 +132,10 @@ class BrowserTelemetrySnapshotTest {
             individualPermissionResults(all))
     }
 
-    @Test @Config(sdk = [33]) fun android13SnapshotIdentifiesMissingNearbyWifiPermissionWithoutLocationEvents() {
+    @Test @Config(sdk = [33]) fun android13WifiDirectSnapshotIdentifiesMissingNearbyWifiPermissionWithoutLocationEvents() {
+        AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.WIFI_P2P)
+        shadowOf(app).denyPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT,
+            WirelessHotspotMode.WIFI_P2P).toTypedArray())
         shadowOf(app).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
         engine.setEnabled(true)
         assertTrue(engine.awaitIdle())
@@ -136,6 +143,26 @@ class BrowserTelemetrySnapshotTest {
         assertEquals("not_granted", permissionResults(all)["wireless"])
         assertEquals(mapOf(Manifest.permission.BLUETOOTH_CONNECT to "allowed",
             Manifest.permission.NEARBY_WIFI_DEVICES to "not_granted"), individualPermissionResults(all))
+    }
+
+    @Test @Config(sdk = [28, 29, 30]) fun legacyManualHotspotSnapshotDoesNotReportUnrequestedRadioGrants() {
+        shadowOf(app).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+
+        assertEquals("allowed", permissionResults(events())["wireless"])
+        assertTrue(individualPermissionResults(events()).isEmpty())
+    }
+
+    @Test @Config(sdk = [31, 33]) fun manualHotspotSnapshotRequiresBluetoothWithoutWifiDiscoveryGrants() {
+        shadowOf(app).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        shadowOf(app).denyPermissions(Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES)
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+
+        assertEquals("allowed", permissionResults(events())["wireless"])
+        assertEquals(mapOf(Manifest.permission.BLUETOOTH_CONNECT to "allowed"), individualPermissionResults(events()))
     }
 
     private fun allowApprovals() {

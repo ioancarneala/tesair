@@ -158,7 +158,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        if (BrowserSessionRecovery.canRecover(this) && DiPlaySessionService.currentBrowserRuntime() == null) {
+        if (BrowserSessionRecovery.canRecover(this) && DiPlaySessionService.currentBrowserRuntime() == null && !bluetoothUnavailable()) {
             try {
                 startForegroundService(Intent(this, DiPlaySessionService::class.java).setAction(DiPlaySessionService.ACTION_RECOVER))
             } catch (_: RuntimeException) { startFailed = true }
@@ -474,7 +474,15 @@ class BrowserOnboardingActivity : ComponentActivity() {
 
     private fun iphone() {
         iphoneSignature = iphoneState()
-        if (!bluetoothEnabled()) {
+        if (bluetoothUnavailable()) {
+            BrowserTelemetry.record(this, "onboarding_step_blocked", mapOf("step" to step.name,
+                "reason" to "bluetooth_unavailable", "source" to "snapshot"))
+            heading(R.string.browser_bluetooth_unavailable_title, R.string.browser_bluetooth_unavailable_body,
+                BrowserOnboardingArtView.Scene.ANDROID_BLUETOOTH, R.string.onboarding_android_device)
+            later()
+            return
+        }
+        if (!bluetoothEnabled() && !CarPlayBackgroundSession.active) {
             heading(R.string.onboarding_bluetooth_enable_title, R.string.onboarding_bluetooth_enable_body,
                 BrowserOnboardingArtView.Scene.ANDROID_BLUETOOTH, R.string.onboarding_android_device)
             action(R.string.onboarding_bluetooth_enable_action, true) {
@@ -484,7 +492,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
             later()
             return
         }
-        if (!selectedPhonePaired()) {
+        if (!selectedPhonePaired() && !CarPlayBackgroundSession.active) {
             val devices = pairedPhones()
             val selectionReady = devices.any(::isIphone) || pairingUntil > android.os.SystemClock.elapsedRealtime() &&
                 devices.any { it.address !in pairingBaseline }
@@ -496,7 +504,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
                 later()
                 return
             }
-            val name = runCatching { bluetoothAdapter()?.name }.getOrNull()
+            val name = bluetoothName()
             heading(R.string.onboarding_iphone_title, R.string.onboarding_iphone_body,
                 BrowserOnboardingArtView.Scene.IPHONE_SETTINGS, R.string.onboarding_iphone_device, name)
             if (!name.isNullOrBlank()) label(getString(R.string.onboarding_bluetooth_name, name), 22, true)
@@ -717,6 +725,11 @@ class BrowserOnboardingActivity : ComponentActivity() {
     @Suppress("MissingPermission")
     private fun bluetoothAdapter() = getSystemService(BluetoothManager::class.java)?.adapter
     private fun bluetoothEnabled() = runCatching { hasPermissions() && bluetoothAdapter()?.isEnabled == true }.getOrDefault(false)
+    private fun bluetoothName() = runCatching { if (hasPermissions()) bluetoothAdapter()?.name else null }.getOrNull()
+    private fun bluetoothUnavailable(): Boolean {
+        if (CarPlayBackgroundSession.active || !hasPermissions()) return false
+        return runCatching { getSystemService(BluetoothManager::class.java)?.let { it.adapter == null } == true }.getOrDefault(false)
+    }
     private fun pairedPhones(): List<BluetoothDevice> = runCatching {
         bluetoothAdapter()?.takeIf { bluetoothEnabled() }?.bondedDevices?.sortedBy { it.name ?: "" }.orEmpty()
     }.getOrDefault(emptyList())
@@ -725,7 +738,7 @@ class BrowserOnboardingActivity : ComponentActivity() {
     private fun selectedPhonePaired() = pairedPhones().any { it.address == DiPlayPreferences.phoneAddress(this) }
     // The system returns the accepted duration; polling scanMode would require a separate scan grant.
     private fun pairingVisible() = pairingUntil > android.os.SystemClock.elapsedRealtime() && bluetoothEnabled()
-    private fun iphoneState() = "${bluetoothEnabled()}/${hotspotOff()}/${DiPlayPreferences.phoneAddress(this)}/${pairingVisible()}/${pairedPhones().map { it.address }}"
+    private fun iphoneState() = "${bluetoothEnabled()}/${bluetoothUnavailable()}/${bluetoothName()}/${hotspotOff()}/${DiPlayPreferences.phoneAddress(this)}/${pairingVisible()}/${pairedPhones().map { it.address }}"
 
     private fun beginPairing() {
         pairingBaseline = pairedPhones().map { it.address }.toSet()

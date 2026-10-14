@@ -33,13 +33,7 @@ internal object BrowserBackgroundReadiness {
             if (needsExemption) Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS
             else Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
             Uri.parse("package:${context.packageName}"),
-        ).apply {
-            // HyperOS intercepts the implicit request with its separate Powerkeeper screen.
-            // That screen's "No restrictions" does not grant the Android Doze exemption.
-            if (needsExemption && listOf(Build.MANUFACTURER, Build.BRAND).any {
-                it.equals("xiaomi", true) || it.equals("redmi", true) || it.equals("poco", true)
-            }) setPackage("com.android.settings")
-        }
+        )
     }
 
     /** OEM settings can be missing or disabled; none of these launches counts as a grant. */
@@ -48,8 +42,10 @@ internal object BrowserBackgroundReadiness {
         if (state.allowed) return true
         val primary = settingsIntent(context)
         val candidates = buildList {
+            // Prefer Android's actual Doze consent when present. Vendor battery dashboards
+            // can handle the same implicit action without granting the Android exemption.
+            if (!state.batteryExempt) add(Intent(primary).setPackage("com.android.settings"))
             add(primary)
-            if (primary.`package` != null) add(Intent(primary).setPackage(null))
             if (!state.batteryExempt) {
                 add(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
                 add(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))

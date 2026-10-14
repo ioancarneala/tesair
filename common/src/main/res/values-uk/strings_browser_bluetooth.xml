@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_bluetooth_unavailable_title">Bluetooth недоступний.</string>
+    <string name="browser_bluetooth_unavailable_body">Цьому пристрою потрібен Bluetooth для підключення iPhone.</string>
+</resources>

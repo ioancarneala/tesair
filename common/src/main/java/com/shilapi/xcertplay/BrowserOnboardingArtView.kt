@@ -9,6 +9,9 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
+import android.graphics.Typeface
+import android.text.TextPaint
+import android.text.TextUtils
 import android.util.SparseArray
 import android.view.View
 import com.shilapi.xcertplay.host.R
@@ -30,12 +33,13 @@ internal class BrowserOnboardingArtView(
     }
     private val path = Path()
     private val bounds = RectF()
+    private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private var currentScene = scene
     private var artwork = loadArtwork(scene)
     private var pairingDeviceName: String? = null
 
     fun setPairingDeviceName(name: String?) {
-        pairingDeviceName = name
+        pairingDeviceName = name?.takeIf { it.isNotBlank() }
         invalidate()
     }
 
@@ -110,40 +114,64 @@ internal class BrowserOnboardingArtView(
     private fun display(canvas: Canvas) = device(canvas, R.drawable.tesair_display, 8f, 0f, 352f, 200f)
 
     private fun iphoneSettings(canvas: Canvas) {
-        device(canvas, R.drawable.tesair_iphone, 72f, 0f, 288f, 322f)
+        device(canvas, R.drawable.tesair_iphone_pairing_frame, 72f, 0f, 288f, 322f)
+        val dark = resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+            android.content.res.Configuration.UI_MODE_NIGHT_YES
+        // The illustrated Settings screen uses iOS colors; the surrounding app keeps its own theme.
+        val screen = if (dark) Color.BLACK else Color.rgb(242, 242, 247)
+        val card = if (dark) Color.rgb(28, 28, 30) else Color.WHITE
+        val ink = if (dark) Color.WHITE else Color.BLACK
+        val secondary = Color.rgb(142, 142, 147)
+        val blue = if (dark) Color.rgb(10, 132, 255) else Color.rgb(0, 122, 255)
+        val saved = canvas.save()
+        // Screen inset measured from the approved transparent frame, independent of any Android model.
+        canvas.translate(115.2f, 19.9f)
+        canvas.scale(129.4f / 133f, 282f / 288f)
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(242, 242, 247)
-        canvas.drawRoundRect(114f, 15f, 247f, 303f, 19f, 19f, paint)
+        paint.color = screen
+        canvas.drawRoundRect(0f, 0f, 133f, 288f, 16.8f, 16.8f, paint)
         paint.color = Color.BLACK
-        canvas.drawRoundRect(153f, 25f, 207f, 38f, 7f, 7f, paint)
-        artText(canvas, "‹ ${context.getString(R.string.onboarding_iphone_settings_label)}", 122f, 60f, 11f, Color.rgb(0, 122, 255), 116f)
-        artText(canvas, context.getString(R.string.onboarding_iphone_bluetooth_label), 122f, 85f, 17f, Color.BLACK, 116f)
+        canvas.drawRoundRect(45f, 3.1f, 88f, 15.4f, 6f, 6f, paint)
+        artText(canvas, "‹ ${context.getString(R.string.onboarding_iphone_settings_label)}", 8f, 45f, 11f, blue, 116f)
+        paint.color = blue
+        canvas.drawRoundRect(46.5f, 60f, 86.5f, 100f, 11f, 11f, paint)
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = 2.3f
         paint.color = Color.WHITE
-        canvas.drawRoundRect(120f, 101f, 240f, 139f, 8f, 8f, paint)
-        artText(canvas, context.getString(R.string.onboarding_iphone_bluetooth_label), 127f, 125f, 11f, Color.BLACK, 76f)
+        path.reset()
+        path.moveTo(66.5f, 68f); path.lineTo(66.5f, 92f)
+        path.lineTo(74.5f, 85f); path.lineTo(59.5f, 73f)
+        path.moveTo(59.5f, 87f); path.lineTo(74.5f, 75f); path.lineTo(66.5f, 68f)
+        canvas.drawPath(path, paint)
+        val bluetoothLabel = context.getString(R.string.onboarding_iphone_bluetooth_label)
+        paint.typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+        paint.textSize = 17f
+        artText(canvas, bluetoothLabel, (133f - paint.measureText(bluetoothLabel).coerceAtMost(116f)) / 2f,
+            129f, 17f, ink, 116f, bold = true)
         paint.style = Paint.Style.FILL
-        paint.color = Color.rgb(52, 199, 89)
-        canvas.drawRoundRect(212f, 114f, 235f, 128f, 7f, 7f, paint)
+        paint.color = card
+        canvas.drawRoundRect(6f, 148f, 127f, 185f, 10f, 10f, paint)
+        artText(canvas, bluetoothLabel, 13f, 172f, 11f, ink, 76f)
+        paint.color = if (dark) Color.rgb(48, 209, 88) else Color.rgb(52, 199, 89)
+        canvas.drawRoundRect(98f, 161f, 121f, 175f, 7f, 7f, paint)
         paint.color = Color.WHITE
-        canvas.drawCircle(228f, 121f, 5.5f, paint)
-        artText(canvas, context.getString(R.string.onboarding_iphone_devices_label), 121f, 164f, 9f, Color.GRAY, 117f)
-        paint.color = Color.WHITE
-        canvas.drawRoundRect(120f, 174f, 240f, 213f, 8f, 8f, paint)
-        artText(canvas, pairingDeviceName ?: context.getString(R.string.onboarding_android_device),
-            127f, 198f, 11f, Color.BLACK, 106f)
-        paint.color = Color.BLACK
-        canvas.drawRoundRect(154f, 291f, 204f, 295f, 2f, 2f, paint)
+        canvas.drawCircle(114f, 168f, 5.5f, paint)
+        artText(canvas, context.getString(R.string.onboarding_iphone_devices_label), 7f, 213f, 8.5f, secondary, 117f)
+        paint.color = card
+        canvas.drawRoundRect(6f, 223f, 127f, 260f, 10f, 10f, paint)
+        artText(canvas, pairingDeviceName.orEmpty(), 13f, 246f, 11f, ink, 107f, bold = true)
+        paint.color = ink
+        canvas.drawRoundRect(40f, 276f, 90f, 280f, 2f, 2f, paint)
+        canvas.restoreToCount(saved)
     }
 
-    private fun artText(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, maxWidth: Float? = null) {
+    private fun artText(canvas: Canvas, value: String, x: Float, y: Float, size: Float, color: Int, maxWidth: Float? = null, bold: Boolean = false) {
         paint.style = Paint.Style.FILL
         paint.textSize = size
+        paint.typeface = Typeface.create(if (bold) "sans-serif-medium" else "sans-serif", Typeface.NORMAL)
         paint.color = color
-        var shown = value
-        if (maxWidth != null && paint.measureText(shown) > maxWidth) {
-            while (shown.isNotEmpty() && paint.measureText("$shown…") > maxWidth) shown = shown.dropLast(1)
-            shown += "…"
-        }
+        textPaint.set(paint)
+        val shown = if (maxWidth == null) value else TextUtils.ellipsize(value, textPaint, maxWidth, TextUtils.TruncateAt.END).toString()
         canvas.drawText(shown, x, y, paint)
     }
 
@@ -208,7 +236,7 @@ internal class BrowserOnboardingArtView(
             Scene.WELCOME -> intArrayOf(R.drawable.tesair_android, R.drawable.tesair_iphone, R.drawable.tesair_display)
             Scene.HOTSPOT, Scene.BACKGROUND, Scene.ANDROID_BLUETOOTH -> intArrayOf(R.drawable.tesair_android)
             Scene.IPHONE -> intArrayOf(R.drawable.tesair_android, R.drawable.tesair_iphone)
-            Scene.IPHONE_SETTINGS -> intArrayOf(R.drawable.tesair_iphone)
+            Scene.IPHONE_SETTINGS -> intArrayOf(R.drawable.tesair_iphone_pairing_frame)
             Scene.AUDIO -> intArrayOf(R.drawable.tesair_iphone, R.drawable.tesair_display)
             else -> intArrayOf(R.drawable.tesair_display)
         }
@@ -216,8 +244,8 @@ internal class BrowserOnboardingArtView(
     }
 
     private companion object {
-        // Three density-independent WebP files share a bounded cache; nothing decodes during drawing.
-        val images = SparseArray<Bitmap>(3)
+        // The four bundled device illustrations decode once, never during drawing.
+        val images = SparseArray<Bitmap>(4)
         @Synchronized fun image(resources: Resources, id: Int): Bitmap = images[id] ?: requireNotNull(
             BitmapFactory.decodeResource(resources, id, BitmapFactory.Options().apply { inScaled = false }),
         ).also { images.put(id, it) }

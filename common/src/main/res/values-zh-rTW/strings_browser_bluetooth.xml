@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_bluetooth_unavailable_title">藍牙無法使用。</string>
+    <string name="browser_bluetooth_unavailable_body">此裝置需要藍牙才能連接 iPhone。</string>
+</resources>

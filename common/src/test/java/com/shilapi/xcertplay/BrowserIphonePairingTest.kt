@@ -36,6 +36,9 @@ import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowVpnService
 import org.robolectric.shadows.ShadowWifiManager
 import org.robolectric.shadows.ShadowSystemClock
+import org.robolectric.shadows.ShadowBluetoothAdapter
+import org.mockito.Mockito.`when`
+import android.content.Context
 import org.robolectric.util.ReflectionHelpers
 import java.time.Duration
 
@@ -49,6 +52,7 @@ class BrowserIphonePairingTest {
 
     @Before fun prepare() {
         clearState()
+        ShadowBluetoothAdapter.setIsBluetoothSupported(true)
         AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.MANUAL)
         shadowOf(app).grantPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         shadowOf(app.getSystemService(PowerManager::class.java)).setIgnoringBatteryOptimizations(app.packageName, true)
@@ -61,7 +65,49 @@ class BrowserIphonePairingTest {
         while (shadowOf(app).nextStartedService != null) { /* Discard earlier test requests. */ }
     }
 
-    @After fun finish() { lifecycle?.pause()?.stop()?.destroy(); clearState() }
+    @After fun finish() { lifecycle?.pause()?.stop()?.destroy(); ShadowBluetoothAdapter.setIsBluetoothSupported(true); clearState() }
+
+    @Test @Config(sdk = [28, 31]) fun missingBluetoothHardwareShowsAnExplanationWithoutAnEnableLoop() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        val screen = open()
+        assertTrue(texts(screen).contains(screen.getString(R.string.browser_bluetooth_unavailable_title)))
+        assertTrue(texts(screen).contains(screen.getString(R.string.browser_bluetooth_unavailable_body)))
+        assertTrue(primaries(screen).isEmpty())
+        assertTrue(buttons(screen).none { it.text == screen.getString(R.string.onboarding_bluetooth_enable_action) })
+        assertTrue(buttons(screen).any { it.text == screen.getString(R.string.onboarding_later) })
+        assertFalse(BrowserOnboardingProgress.completed(app))
+        assertNull(shadowOf(app).nextStartedService)
+    }
+
+    @Test @Config(sdk = [31]) fun deniedBluetoothAccessDoesNotClaimTheHardwareIsMissing() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        shadowOf(app).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        val screen = open()
+        assertFalse(texts(screen).contains(screen.getString(R.string.browser_bluetooth_unavailable_title)))
+        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_permissions_title)))
+    }
+
+    @Test @Config(sdk = [28, 31]) fun unreadableBluetoothManagerDoesNotClaimHardwareIsMissing() {
+        val manager = app.getSystemService(BluetoothManager::class.java)
+        val unreadable = mock(BluetoothManager::class.java)
+        `when`(unreadable.adapter).thenThrow(SecurityException("test denied metadata"))
+        shadowOf(app).setSystemService(Context.BLUETOOTH_SERVICE, unreadable)
+        try {
+            val screen = open()
+            assertFalse(texts(screen).contains(screen.getString(R.string.browser_bluetooth_unavailable_title)))
+            assertFalse(ReflectionHelpers.callInstanceMethod<Boolean>(screen, "bluetoothUnavailable"))
+        } finally { shadowOf(app).setSystemService(Context.BLUETOOTH_SERVICE, manager) }
+    }
+
+    @Test @Config(sdk = [28, 31]) fun anActiveIphoneRemainsConnectedWhenBluetoothHardwareIsUnavailable() {
+        CarPlayBackgroundSession.active = true
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        val screen = open()
+        assertFalse(texts(screen).contains(screen.getString(R.string.browser_bluetooth_unavailable_title)))
+        assertTrue(button(screen, R.string.onboarding_continue).isEnabled)
+        assertEquals(View.VISIBLE, button(screen, R.string.onboarding_continue).visibility)
+        assertTrue(CarPlayBackgroundSession.active)
+    }
 
     @Test fun bluetoothOffShowsOneSystemEnableActionAndKeepsTheSavedIphone() {
         bondIphone()
@@ -89,6 +135,16 @@ class BrowserIphonePairingTest {
         val request = shadowOf(screen).nextStartedActivityForResult.intent
         assertEquals(BluetoothAdapter.ACTION_REQUEST_DISCOVERABLE, request.action)
         assertEquals(300, request.getIntExtra(BluetoothAdapter.EXTRA_DISCOVERABLE_DURATION, 0))
+    }
+
+    @Test fun returningAfterRenamingBluetoothRefreshesTheActualNameInTheGuide() {
+        val screen = open()
+        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_bluetooth_name, "Test Android")))
+        lifecycle!!.pause()
+        adapter.setName("Renamed Android")
+        lifecycle!!.resume()
+        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_bluetooth_name, "Renamed Android")))
+        assertFalse(texts(screen).contains(screen.getString(R.string.onboarding_bluetooth_name, "Test Android")))
     }
 
     @Test fun hotspotOffBlocksStartAndLiveRecheckShowsTheNextActionWhenEnabled() {

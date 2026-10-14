@@ -50,6 +50,7 @@ internal class BrowserDashboardView(
         val permissionsRequired: Boolean = false,
         val hotspotNeedsAttention: Boolean = false,
         val bluetoothRequired: Boolean = false,
+        val bluetoothUnavailable: Boolean = false,
         val otherVpn: Boolean = false,
         val receiverFailed: Boolean = false,
         val addressNeedsHelp: Boolean = false,
@@ -60,6 +61,7 @@ internal class BrowserDashboardView(
         // A working picture cannot establish that Android will keep it running while locked.
         val step get() = when {
             permissionsRequired -> Step.PERMISSIONS
+            bluetoothUnavailable && !iphoneActive -> Step.BLUETOOTH_UNAVAILABLE
             !batteryAllowed -> Step.BACKGROUND
             stopped -> Step.STOPPED
             pictureReady -> Step.READY
@@ -81,6 +83,7 @@ internal class BrowserDashboardView(
     enum class Action { SETUP, BACKGROUND, ROUTE, RETRY, START, PERMISSIONS, HOTSPOT, BLUETOOTH, VPN, INTERNET, IPHONE, NONE }
     enum class Step(val action: Action = Action.NONE) {
         READY, STOPPED(Action.START), PERMISSIONS(Action.PERMISSIONS), HOTSPOT(Action.HOTSPOT), BLUETOOTH(Action.BLUETOOTH),
+        BLUETOOTH_UNAVAILABLE,
         SETUP(Action.SETUP), RETRY(Action.RETRY), STARTING, VPN(Action.VPN), ROUTE(Action.ROUTE),
         ROUTE_STARTING, ADDRESS_HELP(Action.INTERNET), ADDRESS_WAIT, IPHONE(Action.IPHONE), BROWSER, VIDEO,
         BACKGROUND(Action.BACKGROUND),
@@ -229,7 +232,7 @@ internal class BrowserDashboardView(
         illustration.setScene(when (next.step) {
             Step.READY -> BrowserOnboardingArtView.Scene.READY
             Step.HOTSPOT, Step.ADDRESS_HELP -> BrowserOnboardingArtView.Scene.HOTSPOT
-            Step.BLUETOOTH -> BrowserOnboardingArtView.Scene.ANDROID_BLUETOOTH
+            Step.BLUETOOTH, Step.BLUETOOTH_UNAVAILABLE -> BrowserOnboardingArtView.Scene.ANDROID_BLUETOOTH
             Step.PERMISSIONS, Step.VPN, Step.ROUTE, Step.ROUTE_STARTING,
             Step.BACKGROUND -> BrowserOnboardingArtView.Scene.BACKGROUND
             Step.BROWSER, Step.VIDEO, Step.ADDRESS_WAIT -> BrowserOnboardingArtView.Scene.TESLA_BROWSER
@@ -284,7 +287,8 @@ internal class BrowserDashboardView(
             R.string.browser_dashboard_disable_route else R.string.browser_address_enable))
         routeButton.isEnabled = !next.routeBusy && (next.wireless || next.routeEnabled)
         routeButton.visibility = if (next.action == Action.ROUTE && !next.routeEnabled) View.GONE else View.VISIBLE
-        retryButton.visibility = if (next.action == Action.RETRY || next.action == Action.START) View.GONE else View.VISIBLE
+        retryButton.visibility = if (next.action == Action.RETRY || next.action == Action.START || next.step == Step.BLUETOOTH_UNAVAILABLE)
+            View.GONE else View.VISIBLE
         routeDiagnostic.update(next.routeMessage)
         directAddress.update(next.trustedUrl.orEmpty())
         directAddressCard.visibility = if (next.trustedUrl.isNullOrBlank()) View.GONE else View.VISIBLE
@@ -366,6 +370,7 @@ internal class BrowserDashboardView(
         Step.PERMISSIONS -> R.string.browser_next_permissions_title
         Step.HOTSPOT -> R.string.browser_next_hotspot_title
         Step.BLUETOOTH -> R.string.browser_next_bluetooth_title
+        Step.BLUETOOTH_UNAVAILABLE -> R.string.browser_bluetooth_unavailable_title
         Step.SETUP -> R.string.browser_dashboard_setup_attention
         Step.RETRY -> R.string.browser_next_retry_title
         Step.STARTING -> R.string.browser_next_starting_title
@@ -386,6 +391,7 @@ internal class BrowserDashboardView(
         Step.PERMISSIONS -> R.string.browser_next_permissions_hint
         Step.HOTSPOT -> R.string.browser_next_hotspot_hint
         Step.BLUETOOTH -> R.string.browser_next_bluetooth_hint
+        Step.BLUETOOTH_UNAVAILABLE -> R.string.browser_bluetooth_unavailable_body
         Step.SETUP -> R.string.browser_dashboard_setup_attention_hint
         Step.RETRY -> R.string.browser_next_retry_hint
         Step.STARTING -> R.string.browser_next_starting_hint

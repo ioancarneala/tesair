@@ -22,4 +22,8 @@
     <string name="browser_update_source_required">Allow updates from TesAir in Android settings, then tap Install update.</string>
     <string name="browser_update_confirm_android">Confirm the update in Android. You can also install it later.</string>
     <string name="browser_update_install_failed">Android couldn’t open the installer. Try again.</string>
+    <string name="browser_update_alerts_enable">Notify me about updates</string>
+    <string name="browser_update_alerts_enabled">Update notifications are on</string>
+    <string name="browser_update_alerts_settings">Notification settings</string>
+    <string name="browser_update_alerts_unavailable">Open Android settings to allow TesAir notifications.</string>
 </resources>

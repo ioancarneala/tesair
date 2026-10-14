@@ -28,9 +28,9 @@ and **Xiaomi 12X**.
 
 ## What you need
 
-An iPhone, a compatible Android phone running **Android 9 or later**, and a Tesla
-with a browser. The Android phone provides a hotspot with internet access; keep it
-powered during use.
+An iPhone, an Android phone running **Android 9 or later** with Bluetooth and a
+Wi-Fi hotspot, and a Tesla with a browser. The Android phone provides a hotspot
+with internet access; keep it powered during use.
 
 The browser needs WebCodecs video decoding. The confirmed Tesla setup above uses
 AMD Ryzen infotainment.
@@ -49,6 +49,8 @@ AMD Ryzen infotainment.
 
 The short address opens the phone's local HTTPS connection at
 `carplay.tesair.co:8443`.
+
+For update alerts, open **Settings → App updates → Notify me about updates**.
 
 ## Help and development
 

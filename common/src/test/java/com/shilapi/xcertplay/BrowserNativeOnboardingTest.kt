@@ -74,11 +74,11 @@ class BrowserNativeOnboardingTest {
         clearState()
     }
 
-    @Test fun readingTheGuideDoesNotRequestPermissionsOrStartTheReceiver() {
+    @Test @Config(sdk = [31]) fun readingTheGuideDoesNotRequestPermissionsOrStartTheReceiver() {
         shadowOf(context).denyPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         val screen = open(Step.BACKGROUND)
-        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_permissions_location_body)))
+        assertTrue(texts(screen).contains(screen.getString(R.string.onboarding_permissions_body)))
         assertNull(shadowOf(screen).lastRequestedPermission)
         assertNull(shadowOf(screen).nextStartedActivity)
         assertNull(shadowOf(context).nextStartedService)
@@ -253,7 +253,7 @@ class BrowserNativeOnboardingTest {
         }
     }
 
-    @Test fun permanentlyDeniedConnectionPermissionReplacesTheActionWithSettings() {
+    @Test @Config(sdk = [31]) fun permanentlyDeniedConnectionPermissionReplacesTheActionWithSettings() {
         shadowOf(context).denyPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         val screen = open(Step.BACKGROUND)
@@ -266,7 +266,7 @@ class BrowserNativeOnboardingTest {
         assertFalse(BrowserOnboardingProgress.completed(context))
     }
 
-    @Test fun completedSetupChecksPermissionRevocationsButAllowsANormallyStoppedRoute() {
+    @Test @Config(sdk = [31]) fun completedSetupChecksPermissionRevocationsButAllowsANormallyStoppedRoute() {
         BrowserOnboardingProgress.confirmAudio(context)
         assertTrue(BrowserOnboardingProgress.finish(context, true, true))
         BrowserAddressService.disable(context)

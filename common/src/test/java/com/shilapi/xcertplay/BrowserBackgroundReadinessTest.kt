@@ -48,20 +48,28 @@ class BrowserBackgroundReadinessTest {
         assertTrue(BrowserBackgroundReadiness.State(true, false).allowed)
     }
 
-    @Test fun xiaomiRequestTargetsAndroidConsentInsteadOfThePowerkeeperOverride() {
-        ShadowBuild.setManufacturer("Xiaomi")
+    @Test fun platformConsentIsPreferredWithoutDependingOnManufacturer() {
         shadowOf(context.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(context.packageName, false)
-        val request = BrowserBackgroundReadiness.settingsIntent(context)
-        assertEquals("com.android.settings", request.`package`)
-        assertEquals(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, request.action)
-        assertEquals("package:${context.packageName}", request.dataString)
+        for (manufacturer in listOf("Xiaomi", "Samsung", "OnePlus", "Google", "unknown")) {
+            ShadowBuild.setManufacturer(manufacturer)
+            val launched = mutableListOf<Intent>()
+            val host = object : ContextWrapper(context) {
+                override fun startActivity(intent: Intent) { launched.add(intent) }
+            }
+            assertTrue(BrowserBackgroundReadiness.request(host))
+            val request = launched.single()
+            assertEquals(manufacturer, "com.android.settings", request.`package`)
+            assertEquals(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, request.action)
+            assertEquals("package:${context.packageName}", request.dataString)
+            assertFalse(BrowserBackgroundReadiness.snapshot(host).allowed)
+        }
     }
 
     @Test fun standardRequestIsSharedAcrossManufacturers() {
         shadowOf(context.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(context.packageName, false)
-        for (manufacturer in listOf("Samsung", "OnePlus", "OPPO", "realme", "Huawei", "HONOR", "vivo", "Google", "motorola", "unknown")) {
+        for (manufacturer in listOf("Xiaomi", "Samsung", "OnePlus", "OPPO", "realme", "Huawei", "HONOR", "vivo", "Google", "motorola", "unknown")) {
             ShadowBuild.setManufacturer(manufacturer)
             ShadowBuild.setBrand(manufacturer)
             val request = BrowserBackgroundReadiness.settingsIntent(context)
@@ -70,7 +78,7 @@ class BrowserBackgroundReadinessTest {
         }
     }
 
-    @Test fun unavailableOemConsentFallsBackWithoutInventingAGrant() {
+    @Test fun unavailablePlatformConsentFallsBackWithoutInventingAGrant() {
         ShadowBuild.setManufacturer("Xiaomi")
         shadowOf(context.getSystemService(PowerManager::class.java))
             .setIgnoringBatteryOptimizations(context.packageName, false)
@@ -104,6 +112,7 @@ class BrowserBackgroundReadinessTest {
         }
         assertFalse(BrowserBackgroundReadiness.request(host))
         assertEquals(listOf(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+            Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
             Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS, Settings.ACTION_APPLICATION_DETAILS_SETTINGS),
             launched.map { it.action })
         assertTrue(launched.all { it.flags and Intent.FLAG_ACTIVITY_NEW_TASK != 0 })

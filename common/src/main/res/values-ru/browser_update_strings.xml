@@ -22,4 +22,8 @@
     <string name="browser_update_source_required">Разрешите установку обновлений из TesAir в настройках Android, затем нажмите Установить обновление.</string>
     <string name="browser_update_confirm_android">Подтвердите обновление в Android. Можно установить его позже.</string>
     <string name="browser_update_install_failed">Android не смог открыть установщик. Повторите попытку.</string>
+    <string name="browser_update_alerts_enable">Уведомлять об обновлениях</string>
+    <string name="browser_update_alerts_enabled">Уведомления об обновлениях включены</string>
+    <string name="browser_update_alerts_settings">Настройки уведомлений</string>
+    <string name="browser_update_alerts_unavailable">Разрешите уведомления TesAir в настройках Android.</string>
 </resources>

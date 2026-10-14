@@ -32,6 +32,7 @@ import org.robolectric.android.controller.ActivityController
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.LooperMode
 import org.robolectric.shadows.ShadowVpnService
+import org.robolectric.shadows.ShadowBluetoothAdapter
 import org.robolectric.util.ReflectionHelpers
 
 @RunWith(RobolectricTestRunner::class)
@@ -110,6 +111,23 @@ class BrowserOnboardingTelemetryStartTest {
         assertFalse(events.any { it.getString("name") in setOf("receiver_start_requested", "session_started", "connection_attempt_started") })
         assertEquals(Step.BACKGROUND, BrowserOnboardingProgress.step(app))
         assertNull(shadowOf(app).nextStartedService)
+    }
+
+    @Test fun missingBluetoothHardwareReportsOneObservedBlockWithoutAReceiverAttempt() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        try {
+            val screen = open()
+            repeat(3) { ReflectionHelpers.callInstanceMethod<Unit>(screen, "updateLiveState") }
+            assertTrue(engine.awaitIdle())
+            val all = events()
+            val blocks = all.filter { it.getString("name") == "onboarding_step_blocked" &&
+                it.getJSONObject("attributes").optString("reason") == "bluetooth_unavailable" }
+            assertEquals(1, blocks.size)
+            assertEquals(Step.IPHONE.name, blocks.single().getJSONObject("attributes").getString("step"))
+            assertEquals("snapshot", blocks.single().getJSONObject("attributes").getString("source"))
+            assertTrue(all.none { it.getString("name") in setOf("receiver_start_requested", "session_started", "connection_attempt_started") })
+            assertNull(shadowOf(app).nextStartedService)
+        } finally { ShadowBluetoothAdapter.setIsBluetoothSupported(true) }
     }
 
     private fun open(): BrowserOnboardingActivity {

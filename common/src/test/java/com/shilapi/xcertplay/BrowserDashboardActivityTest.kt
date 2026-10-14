@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.PowerManager
 import android.app.ActivityManager
+import android.Manifest
 import android.provider.Settings
 import android.view.View
 import android.view.ViewGroup
@@ -42,6 +43,8 @@ import org.robolectric.shadows.ShadowWifiManager
 import org.robolectric.shadows.ShadowNetwork
 import org.robolectric.shadows.ShadowNetworkCapabilities
 import org.robolectric.shadows.ShadowNetworkInfo
+import org.robolectric.shadows.ShadowBluetoothAdapter
+import com.shilapi.xcertplay.browser.BrowserStreamOutput
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28, 33])
@@ -51,6 +54,7 @@ class BrowserDashboardActivityTest {
     private var lifecycle: ActivityController<BrowserDashboardActivity>? = null
 
     @Before fun setUp() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(true)
         shadowOf(app.getSystemService(ConnectivityManager::class.java)).clearAllNetworks()
         app.getSharedPreferences("diplay", 0).edit().clear().commit()
         app.getSharedPreferences("xcertplay_airplay", 0).edit().clear().commit()
@@ -70,11 +74,62 @@ class BrowserDashboardActivityTest {
     @After fun tearDown() {
         shadowOf(app.getSystemService(ConnectivityManager::class.java)).clearAllNetworks()
         lifecycle?.destroy()
+        ShadowBluetoothAdapter.setIsBluetoothSupported(true)
         CarPlayBackgroundSession.clear()
         ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "runtime", null)
         ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", null)
         BrowserAddressService.disable(app)
         ShadowVpnService.setPrepareResult(null)
+    }
+
+    @Test @Config(sdk = [28, 31]) fun missingBluetoothHardwareShowsNoFalseRepairAndDoesNotLaunchAReceiver() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        lifecycle = Robolectric.buildActivity(BrowserDashboardActivity::class.java).create().start().resume()
+        val screen = lifecycle!!.get()
+        assertTrue(descendants(screen.window.decorView).filterIsInstance<TextView>()
+            .any { it.text == screen.getString(R.string.browser_bluetooth_unavailable_title) })
+        val dashboard = ReflectionHelpers.getField<BrowserDashboardView>(screen, "dashboard")
+        val state = ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state")
+        assertEquals(BrowserDashboardView.Step.BLUETOOTH_UNAVAILABLE, state.step)
+        assertEquals(BrowserDashboardView.Action.NONE, state.action)
+        assertNull(shadowOf(app).nextStartedService)
+        descendants(screen.window.decorView).filterIsInstance<Button>()
+            .single { it.text == screen.getString(R.string.browser_dashboard_show_details) }.performClick()
+        assertTrue(descendants(screen.window.decorView).filterIsInstance<Button>()
+            .none { it.visibility == View.VISIBLE && it.text == screen.getString(R.string.retry_carplay_connection) })
+    }
+
+    @Test @Config(sdk = [31]) fun missingRuntimeGrantStillRequestsAccessInsteadOfClaimingBluetoothHardwareIsMissing() {
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        shadowOf(app).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT)
+        lifecycle = Robolectric.buildActivity(BrowserDashboardActivity::class.java).create().start().resume()
+        val screen = lifecycle!!.get()
+        val dashboard = ReflectionHelpers.getField<BrowserDashboardView>(screen, "dashboard")
+        val state = ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state")
+        assertEquals(BrowserDashboardView.Step.PERMISSIONS, state.step)
+        assertFalse(state.bluetoothUnavailable)
+    }
+
+    @Test @Config(sdk = [28, 31]) fun anActivePictureIsPreservedIfTheBluetoothAdapterBecomesUnavailable() {
+        val output = mock(BrowserStreamOutput::class.java)
+        `when`(output.running).thenReturn(true)
+        `when`(output.clientCount).thenReturn(1)
+        `when`(output.hasRenderedVideo).thenReturn(true)
+        `when`(output.urls).thenReturn(listOf("https://carplay.tesair.co:8443"))
+        ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", output)
+        val stop: ((() -> Unit) -> Unit) = { throw AssertionError("A hardware read must not stop an active session") }
+        ReflectionHelpers.setField(CarPlayBackgroundSession, "stopAction", stop)
+        CarPlayBackgroundSession.active = true
+        shadowOf(app.getSystemService(PowerManager::class.java)).setIgnoringBatteryOptimizations(app.packageName, true)
+        shadowOf(app.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(false)
+        ShadowBluetoothAdapter.setIsBluetoothSupported(false)
+        val screen = openDashboard()
+        val dashboard = ReflectionHelpers.getField<BrowserDashboardView>(screen, "dashboard")
+        val state = ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state")
+        assertFalse(state.bluetoothUnavailable)
+        assertEquals(BrowserDashboardView.Step.READY, state.step)
+        assertTrue(CarPlayBackgroundSession.active)
+        assertTrue(CarPlayBackgroundSession.hasSession())
     }
 
     @Test fun openingTheDashboardStartsOnlyTheServiceAndClosingItDoesNotStopTheReceiver() {
@@ -138,7 +193,7 @@ class BrowserDashboardActivityTest {
         assertNull(shadowOf(activity).nextStartedActivity)
     }
 
-    @Test fun missingWirelessPermissionDoesNotStartTheForegroundService() {
+    @Test @Config(sdk = [31, 33]) fun missingWirelessPermissionDoesNotStartTheForegroundService() {
         shadowOf(app).denyPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         lifecycle = Robolectric.buildActivity(BrowserDashboardActivity::class.java).create()
@@ -165,7 +220,7 @@ class BrowserDashboardActivityTest {
         assertFalse(lifecycle!!.get().intent.hasExtra(BrowserDashboardActivity.EXTRA_RECONNECT))
     }
 
-    @Test fun recreationPreservesTheConnectWaitingForPermissionWithoutStartingEarly() {
+    @Test @Config(sdk = [31, 33]) fun recreationPreservesTheConnectWaitingForPermissionWithoutStartingEarly() {
         shadowOf(app).denyPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
         val intent = Intent().putExtra(BrowserDashboardActivity.EXTRA_RECONNECT, true)

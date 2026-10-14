@@ -22,4 +22,8 @@
     <string name="browser_update_source_required">請在 Android 設定中允許透過 TesAir 安裝更新，然後點選安裝更新。</string>
     <string name="browser_update_confirm_android">請在 Android 中確認更新。你也可以稍後安裝。</string>
     <string name="browser_update_install_failed">Android 無法開啟安裝程式。請重試。</string>
+    <string name="browser_update_alerts_enable">接收更新通知</string>
+    <string name="browser_update_alerts_enabled">更新通知已開啟</string>
+    <string name="browser_update_alerts_settings">通知設定</string>
+    <string name="browser_update_alerts_unavailable">請在 Android 設定中允許 TesAir 傳送通知。</string>
 </resources>

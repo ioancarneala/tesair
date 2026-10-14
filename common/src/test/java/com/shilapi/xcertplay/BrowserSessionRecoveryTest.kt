@@ -2,6 +2,7 @@ package com.shilapi.xcertplay
 
 import android.Manifest
 import android.content.ContextWrapper
+import android.os.Build
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import org.junit.After
 import org.junit.Assert.*
@@ -119,6 +120,17 @@ class BrowserSessionRecoveryTest {
         assertTrue(BrowserSessionRecovery.canRecover(browser))
     }
 
+    @Test @Config(sdk = [28, 31, 33]) fun manualHotspotRecoveryDoesNotDependOnWifiDiscoveryGrants() {
+        configure()
+        BrowserSessionRecovery.markStarted(browser)
+        shadowOf(app).denyPermissions(Manifest.permission.ACCESS_COARSE_LOCATION,
+            Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.NEARBY_WIFI_DEVICES)
+
+        assertTrue(BrowserSessionRecovery.configured(browser))
+        assertTrue(BrowserSessionRecovery.canRecover(browser))
+        assertNull(shadowOf(app).nextStartedActivity)
+    }
+
     @Test fun otherBuildsDoNotAcquireBrowserRecoveryState() {
         configure()
         BrowserSessionRecovery.markStarted(app)
@@ -135,7 +147,7 @@ class BrowserSessionRecoveryTest {
         AirPlayPersistence.saveWirelessHotspotMode(browser, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(browser, "Test hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(browser, "test-passphrase")
-        shadowOf(app).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        shadowOf(app).grantPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT,
+            WirelessHotspotMode.MANUAL).toTypedArray())
     }
 }

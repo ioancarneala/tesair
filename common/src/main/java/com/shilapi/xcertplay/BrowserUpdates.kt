@@ -53,6 +53,16 @@ internal object BrowserUpdates {
             ?.takeIf { it.versionCode > installedVersion(context) }
     }
 
+    internal fun notificationsEnabled(context: Context): Boolean =
+        (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED) && NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+            context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)?.importance !=
+            NotificationManager.IMPORTANCE_NONE
+
+    internal fun notifyCached(context: Context) {
+        cached(context)?.let { info -> runCatching { notifyOnce(context, info) } }
+    }
+
     fun check(context: Context, force: Boolean = false, callback: (BrowserUpdateState) -> Unit = {}) {
         val app = context.applicationContext
         if (app.packageName != BrowserUpdatePolicy.PACKAGE) {
@@ -216,9 +226,7 @@ internal object BrowserUpdates {
     private fun notifyOnce(context: Context, info: BrowserUpdateInfo) {
         val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
         if (prefs.getLong("notified_version", 0) >= info.versionCode ||
-            !NotificationManagerCompat.from(context).areNotificationsEnabled() ||
-            (Build.VERSION.SDK_INT >= 33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) !=
-                PackageManager.PERMISSION_GRANTED)) return
+            !notificationsEnabled(context)) return
         val manager = context.getSystemService(NotificationManager::class.java)
         manager.createNotificationChannel(NotificationChannel(CHANNEL,
             context.getString(R.string.browser_update_channel), NotificationManager.IMPORTANCE_LOW))

@@ -201,6 +201,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     private fun startReceiver(reconnect: Boolean) {
+        if (bluetoothUnavailable()) return
         if (reconnect) BrowserTelemetry.record(this, "receiver_start_requested", mapOf("automatic" to false, "manualIntervention" to true, "source" to "dashboard"))
         serviceFailure = null
         reconnectAfterPermissions = false
@@ -306,6 +307,11 @@ class BrowserDashboardActivity : ComponentActivity() {
     private fun bluetoothRequired(): Boolean = !CarPlayBackgroundSession.active && hasWirelessPermissions() &&
         runCatching { getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() == false
 
+    private fun bluetoothUnavailable(): Boolean {
+        if (CarPlayBackgroundSession.active || !hasWirelessPermissions()) return false
+        return runCatching { getSystemService(BluetoothManager::class.java)?.let { it.adapter == null } == true }.getOrDefault(false)
+    }
+
     private fun updateStatus() {
         if (!::dashboard.isInitialized || isDestroyed) return
         val route = BrowserAddressService.snapshot(this)
@@ -361,6 +367,7 @@ class BrowserDashboardActivity : ComponentActivity() {
             permissionsRequired = !hasWirelessPermissions(),
             hotspotNeedsAttention = hotspotNeedsAttention(),
             bluetoothRequired = bluetoothRequired(),
+            bluetoothUnavailable = bluetoothUnavailable(),
             otherVpn = !route.active && BrowserAddressService.hasOtherVpn(this),
             receiverFailed = serviceFailure != null || (BrowserSessionRecovery.stopped(this) &&
                 output?.running != true && runtime == null),

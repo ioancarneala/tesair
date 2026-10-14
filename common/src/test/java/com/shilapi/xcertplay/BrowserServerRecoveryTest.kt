@@ -2,8 +2,8 @@ package com.shilapi.xcertplay
 
 import android.content.ContextWrapper
 import android.content.Intent
-import android.Manifest
 import android.app.Service
+import android.os.Build
 import android.os.Looper
 import android.os.PowerManager
 import com.shilapi.xcertplay.browser.BrowserStreamOutput
@@ -479,8 +479,8 @@ class BrowserServerRecoveryTest {
         AirPlayPersistence.saveWirelessHotspotMode(service, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(service, "Test hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(service, "test-passphrase")
-        shadowOf(service.application).grantPermissions(Manifest.permission.ACCESS_COARSE_LOCATION,
-            Manifest.permission.ACCESS_FINE_LOCATION)
+        shadowOf(service.application).grantPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT,
+            WirelessHotspotMode.MANUAL).toTypedArray())
     }
 
     private fun assertForegroundStartWasSatisfiedAndRemoved() {

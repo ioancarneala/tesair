@@ -1,9 +1,12 @@
 package com.shilapi.xcertplay
 
+import android.Manifest
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.content.res.ColorStateList
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -14,6 +17,7 @@ import android.widget.LinearLayout
 import android.widget.ProgressBar
 import android.widget.ScrollView
 import android.widget.TextView
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.FileProvider
@@ -34,9 +38,22 @@ class BrowserUpdateActivity : ComponentActivity() {
     private lateinit var progress: ProgressBar
     private lateinit var action: Button
     private lateinit var retry: Button
+    private lateinit var notifications: Button
     private var available: BrowserUpdateInfo? = null
     private var downloaded: File? = null
     private var busy = false
+    private var notificationsAllowed = false
+    internal var updateChecker: (Boolean, (BrowserUpdateState) -> Unit) -> Unit = { force, callback ->
+        BrowserUpdates.check(this, force, callback)
+    }
+
+    private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) {
+        // The dialog result does not certify that app or channel notifications are enabled.
+        refreshNotifications()
+    }
+    private val notificationSettings = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        refreshNotifications()
+    }
 
     private val sourcePermission = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (packageManager.canRequestPackageInstalls()) install()
@@ -92,6 +109,10 @@ class BrowserUpdateActivity : ComponentActivity() {
             text = getString(R.string.browser_update_keeps_settings)
             gravity = Gravity.CENTER
         }, margins(24))
+        notifications = BrowserDesign.setupButton(this, getString(R.string.browser_update_alerts_enable)) {
+            requestNotifications()
+        }.apply { tag = R.string.browser_update_alerts_enable }
+        content.addView(notifications, margins(24))
         val frame = LinearLayout(this).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL }
         frame.addView(content, LinearLayout.LayoutParams(
             if (resources.configuration.screenWidthDp > 600) dp(560) else -1, -2))
@@ -103,14 +124,57 @@ class BrowserUpdateActivity : ComponentActivity() {
         check()
     }
 
+    override fun onResume() {
+        super.onResume()
+        refreshNotifications()
+    }
+
+    private fun refreshNotifications() {
+        if (!::notifications.isInitialized) return
+        val allowed = BrowserUpdates.notificationsEnabled(this)
+        notifications.isEnabled = !allowed
+        val requestable = Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !getSharedPreferences("browser_updates", MODE_PRIVATE).getBoolean("notification_requested", false)
+        notifications.setText(when {
+            allowed -> R.string.browser_update_alerts_enabled
+            requestable -> R.string.browser_update_alerts_enable
+            else -> R.string.browser_update_alerts_settings
+        })
+        if (allowed && !notificationsAllowed) BrowserUpdates.notifyCached(this)
+        notificationsAllowed = allowed
+    }
+
+    private fun requestNotifications() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED &&
+            !getSharedPreferences("browser_updates", MODE_PRIVATE).getBoolean("notification_requested", false)) {
+            getSharedPreferences("browser_updates", MODE_PRIVATE).edit().putBoolean("notification_requested", true).apply()
+            try {
+                notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+                return
+            } catch (_: RuntimeException) { /* Fall back to the public Android settings screen. */ }
+        }
+        val candidates = listOf(
+            Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE, packageName),
+            Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")),
+        )
+        for (intent in candidates) try {
+            notificationSettings.launch(intent)
+            return
+        } catch (_: RuntimeException) { /* Try the next public settings entry point. */ }
+        Toast.makeText(this, R.string.browser_update_alerts_unavailable, Toast.LENGTH_SHORT).show()
+        refreshNotifications()
+    }
+
     private fun check() {
         if (busy) return
         title.setText(R.string.browser_update_title)
         detail.setText(R.string.browser_update_checking)
         retry.isEnabled = false
         action.isEnabled = false
-        BrowserUpdates.check(this, force = true) { state ->
-            if (isFinishing || isDestroyed) return@check
+        updateChecker(true) checked@ { state ->
+            if (isFinishing || isDestroyed) return@checked
             available = state.update
             retry.isEnabled = true
             if (state.update != null) {

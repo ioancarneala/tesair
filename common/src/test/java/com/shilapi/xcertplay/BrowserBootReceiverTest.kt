@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ComponentName
 import android.content.ContextWrapper
 import android.content.Intent
+import android.os.Build
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import org.junit.After
 import org.junit.Assert.*
@@ -214,7 +215,7 @@ class BrowserBootReceiverTest {
         AirPlayPersistence.saveWirelessHotspotMode(browser, WirelessHotspotMode.MANUAL)
         AirPlayPersistence.saveManualHotspotSsid(browser, "Test hotspot")
         AirPlayPersistence.saveManualHotspotPassphrase(browser, "test-passphrase")
-        shadowOf(app).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT,
-            Manifest.permission.ACCESS_COARSE_LOCATION, Manifest.permission.ACCESS_FINE_LOCATION)
+        shadowOf(app).grantPermissions(*WirelessPermissions.required(Build.VERSION.SDK_INT,
+            WirelessHotspotMode.MANUAL).toTypedArray())
     }
 }

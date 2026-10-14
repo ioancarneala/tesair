@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="browser_bluetooth_unavailable_title">Bluetooth no disponible.</string>
+    <string name="browser_bluetooth_unavailable_body">Este dispositivo necesita Bluetooth para conectar tu iPhone.</string>
+</resources>

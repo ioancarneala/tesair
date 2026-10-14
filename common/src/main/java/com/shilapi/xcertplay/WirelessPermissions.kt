@@ -6,7 +6,8 @@ import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 internal object WirelessPermissions {
     fun required(sdk: Int, mode: WirelessHotspotMode): List<String> {
         val permissions = when {
-            mode == WirelessHotspotMode.EXISTING_WIFI ->
+            // These modes attach to a user-configured network; they do not manage nearby Wi-Fi.
+            mode == WirelessHotspotMode.EXISTING_WIFI || mode == WirelessHotspotMode.MANUAL ->
                 if (sdk >= 31) listOf(Manifest.permission.BLUETOOTH_CONNECT) else emptyList()
             sdk >= 33 -> listOf(Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.NEARBY_WIFI_DEVICES)
             sdk >= 31 -> listOf(Manifest.permission.BLUETOOTH_CONNECT,
