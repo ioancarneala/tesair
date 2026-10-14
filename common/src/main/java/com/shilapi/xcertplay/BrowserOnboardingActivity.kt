@@ -77,6 +77,9 @@ class BrowserOnboardingActivity : ComponentActivity() {
 
     private val permissions = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
         permissionDenied = !hasPermissions()
+        it.forEach { (permission, granted) ->
+            BrowserTelemetry.record(this, "permission_result", mapOf("permission" to permission, "source" to "system_dialog", "result" to if (granted) "allowed" else "denied"))
+        }
         BrowserTelemetry.record(this, "permission_result", mapOf("permission" to "wireless", "result" to if (permissionDenied) "denied" else "allowed"))
         render()
     }

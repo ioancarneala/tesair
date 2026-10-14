@@ -1,12 +1,15 @@
 package com.shilapi.xcertplay
 
 import android.content.Context
+import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import com.shilapi.xcertplay.orchestration.ManualHotspotValidation
+import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
@@ -201,16 +204,42 @@ internal class BrowserTelemetryEngine(
     private fun metadata(): Map<String, Any?> {
         val info = runCatching { app.packageManager.getPackageInfo(app.packageName, 0) }.getOrNull()
         return mapOf("appVersion" to (info?.versionName ?: "unknown"), "appVersionCode" to (info?.longVersionCode ?: 0L),
-            "androidApi" to Build.VERSION.SDK_INT, "manufacturer" to Build.MANUFACTURER, "deviceModel" to Build.MODEL,
+            "androidApi" to Build.VERSION.SDK_INT, "androidVersion" to Build.VERSION.RELEASE,
+            "manufacturer" to Build.MANUFACTURER, "deviceModel" to Build.MODEL,
             "onboardingRevision" to 1)
     }
 
     private fun configurationSnapshot(time: Long, elapsed: Long) {
+        val mode = AirPlayPersistence.loadWirelessHotspotMode(app)
+        val hotspotConfigured = when (mode) {
+            WirelessHotspotMode.MANUAL -> ManualHotspotValidation.error(
+                AirPlayPersistence.loadManualHotspotSsid(app), AirPlayPersistence.loadManualHotspotPassphrase(app)) == null
+            WirelessHotspotMode.EXISTING_WIFI -> ManualHotspotValidation.error(
+                AirPlayPersistence.loadExistingWifiSsid(app), AirPlayPersistence.loadExistingWifiPassphrase(app)) == null
+            else -> true
+        }
         append("configuration_saved", time, elapsed, mapOf("qualityPercent" to AirPlayPersistence.loadBrowserResolutionPercent(app),
             "fpsRequested" to AirPlayPersistence.loadFps(app), "interfaceScale" to AirPlayPersistence.loadWidthPhysicalMm(app),
             "codec" to "h264", "transport" to "wireless", "source" to "snapshot",
+            "hotspotConfigured" to hotspotConfigured, "setupCompleted" to BrowserOnboardingProgress.completed(app),
             "declaredInfotainment" to app.getSharedPreferences("browser_telemetry_context", Context.MODE_PRIVATE)
                 .getString("declaredInfotainment", null)))
+        val wirelessPermissions = WirelessPermissions.required(Build.VERSION.SDK_INT, mode).associateWith {
+            app.checkSelfPermission(it) == PackageManager.PERMISSION_GRANTED
+        }
+        val permissions = mapOf(
+            "wireless" to wirelessPermissions.values.all { it },
+            "background" to BrowserBackgroundReadiness.snapshot(app).allowed,
+            "local_route" to BrowserOnboardingProgress.localAddressApproved(app),
+        )
+        permissions.forEach { (permission, allowed) ->
+            append("permission_result", time, elapsed, mapOf("permission" to permission, "source" to "snapshot",
+                "result" to if (allowed) "allowed" else "not_granted"))
+        }
+        wirelessPermissions.forEach { (permission, allowed) ->
+            append("permission_result", time, elapsed, mapOf("permission" to permission, "source" to "snapshot",
+                "result" to if (allowed) "allowed" else "not_granted"))
+        }
     }
 
     private fun upload(force: Boolean = false) {

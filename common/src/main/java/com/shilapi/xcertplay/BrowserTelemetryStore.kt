@@ -92,7 +92,7 @@ internal object BrowserTelemetrySchema {
         "browser_decoder_ready", "browser_first_frame", "browser_error", "performance_summary", "recovery_scheduled",
         "recovery_completed", "session_started", "session_ended", "update_check", "update_available", "update_download_started",
         "update_download_completed", "update_install_requested", "diagnostic_feedback", "reliability_sample")
-    private val keys = setOf("appVersion", "appVersionCode", "androidApi", "manufacturer", "deviceModel", "browserFamily",
+    private val keys = setOf("appVersion", "appVersionCode", "androidApi", "androidVersion", "manufacturer", "deviceModel", "browserFamily",
         "browserVersion", "browserEngine", "transport", "sessionOrigin", "step", "permission", "result", "reason", "errorCode",
         "automatic", "attempt", "durationMs", "retryDelayMs", "width", "height", "fpsRequested", "fpsReceived", "fpsDecoded",
         "droppedFrames", "decodeMeanMs", "decodeMaxMs", "queueDepth", "codec", "webCodecs", "secureContext", "configSupported",
@@ -100,11 +100,12 @@ internal object BrowserTelemetrySchema {
         "browserCount", "qualityPercent", "interfaceScale", "updateVersionCode", "onboardingRevision", "visibleDurationMs",
         "direction", "targetStep", "source", "browserSessionId", "viewportWidth", "viewportHeight", "declaredInfotainment",
         "displayPath", "acceptedPackets", "decodedFrames", "drawnFrames", "sampleDurationMs", "screenOn", "idle", "powerSave",
-        "batteryExempt", "lowMemory", "uplink", "validated", "wifi", "cellular", "bluetooth", "videoRendered")
+        "batteryExempt", "lowMemory", "uplink", "validated", "wifi", "cellular", "bluetooth", "videoRendered",
+        "hotspotConfigured", "setupCompleted")
     private val booleans = setOf("automatic", "manualIntervention", "webCodecs", "secureContext", "configSupported", "sampleDecoded",
         "charging", "receiverRunning", "iphoneActive", "screenOn", "idle", "powerSave", "batteryExempt", "lowMemory", "uplink",
-        "validated", "wifi", "cellular", "bluetooth", "videoRendered")
-    private val strings = setOf("appVersion", "manufacturer", "deviceModel", "browserFamily", "browserVersion", "browserEngine",
+        "validated", "wifi", "cellular", "bluetooth", "videoRendered", "hotspotConfigured", "setupCompleted")
+    private val strings = setOf("appVersion", "androidVersion", "manufacturer", "deviceModel", "browserFamily", "browserVersion", "browserEngine",
         "transport", "sessionOrigin", "step", "permission", "result", "reason", "errorCode", "source", "direction", "targetStep",
         "displayPath", "declaredInfotainment", "codec", "browserSessionId")
     private val floating = setOf("fpsRequested", "fpsReceived", "fpsDecoded", "decodeMeanMs", "decodeMaxMs", "interfaceScale")

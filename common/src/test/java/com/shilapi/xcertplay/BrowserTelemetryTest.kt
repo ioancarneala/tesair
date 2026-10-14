@@ -270,11 +270,12 @@ class BrowserTelemetryTest {
         engine.setEnabled(true)
         assertTrue(engine.awaitIdle())
         assertEquals(1, transport.calls.size)
+        val initialCount = queue().length()
         engine.record("onboarding_step_blocked", mapOf("step" to "BACKGROUND"))
         engine.record("app_backgrounded", mapOf("source" to "onboarding"))
         assertTrue(engine.awaitIdle())
         assertEquals(1, transport.calls.size)
-        assertEquals(5, queue().length())
+        assertEquals(initialCount + 2, queue().length())
         elapsed += 60_001; time += 60_001
         transport.status = 200
         engine.record("app_backgrounded", mapOf("source" to "onboarding"))
