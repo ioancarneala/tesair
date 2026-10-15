@@ -99,13 +99,11 @@ class SignedApkTest(unittest.TestCase):
         self.assertEqual(["apksigner", "verify", "--verbose", "--print-certs", str(self.apk)], run.call_args_list[1].args[0])
         return metadata
 
-    def test_manifest_uses_verified_apk_and_matches_backend_signer(self):
+    def test_manifest_uses_verified_apk(self):
         metadata = self.inspect()
         self.assertEqual("1.0.4", metadata["versionName"])
         self.assertEqual(66, metadata["versionCode"])
         self.assertEqual(manifest.hashlib.sha256(self.apk.read_bytes()).hexdigest(), metadata["sha256"])
-        backend = (module_path.parent.parent / "backend/telemetry/updates.mjs").read_text()
-        self.assertIn(f"const CERTIFICATE_SHA256 = '{manifest.CERTIFICATE_SHA256}';", backend)
 
     def test_rejects_foreign_debug_unstable_or_invalid_version_apks(self):
         for badging in (self.badging.replace("co.tesair.app", "co.tesair.app.debug"),

@@ -39,8 +39,6 @@ jobs:
           node-version: '22'
       - name: Browser player tests
         run: node --test tests/browser-player.test.cjs tests/browser-telemetry.test.cjs
-      - name: Telemetry service tests
-        run: node --test backend/telemetry/test/*.test.mjs
       - uses: actions/setup-java@v4
         with:
           distribution: temurin

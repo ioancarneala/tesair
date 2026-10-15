@@ -33,7 +33,6 @@ trusted HTTPS requires separately supplied runtime provisioning.
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/check_public_tree.py
 node --test tests/browser-player.test.cjs tests/browser-telemetry.test.cjs
-node --test backend/telemetry/test/*.test.mjs
 python3 scripts/verify-browser-manifests.py \
   --debug mobile/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml \
   --release mobile/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
@@ -120,5 +119,5 @@ From v1.0.4, the running app checks daily for releases, retries failed checks af
 15 minutes, and shows the changelog before downloading. Users can also check
 manually in **Settings → App updates**. The APK's package, version, checksum and
 existing signing key are verified; installation requires Android confirmation.
-The optional reporting service and
-private analysis commands are documented in [backend/telemetry](../backend/telemetry/README.md).
+The optional reporting service is maintained privately, outside this repository; the
+app-side behaviour is described in [PRIVACY.md](PRIVACY.md).
