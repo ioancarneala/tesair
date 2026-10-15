@@ -49,6 +49,29 @@ build directories are excluded unless tracked.
 Release application ID: `co.tesair.app`. The version and version code are defined in
 [`mobile/build.gradle.kts`](../mobile/build.gradle.kts).
 
+### Release checklist
+
+Follow these in order so installed apps receive the update alert and reporting keeps working.
+
+1. **Bump the version.** Set `versionCode` (must increase) and `versionName` in
+   [`mobile/build.gradle.kts`](../mobile/build.gradle.kts).
+2. **Build and sign.** With the environment variables below set, run
+   `./gradlew :mobile:lintRelease :mobile:assembleStandaloneRelease`.
+3. **Check the artifact.** Confirm `mobile/build/outputs/apk/release/mobile-release.apk`
+   is `co.tesair.app`, carries the new version, and is signed by the established key.
+4. **Publish the release yourself.** Create a stable, non-draft GitHub release tagged
+   `vX.Y.Z`, with a `## What's new` section and the APK attached as `TesAir-vX.Y.Z.apk`.
+   Publish with your own GitHub account: a release created by an action's `GITHUB_TOKEN`
+   does not trigger the metadata workflow.
+5. **Let automation attach `update.json`.** The
+   [Release update metadata](../.github/workflows/release-updates.yml) workflow verifies
+   the APK and uploads `update.json` automatically (or generate it by hand, below).
+6. **Confirm the update is live.** `https://telemetry.tesair.co/v1/update` should report
+   the new version (cached up to one hour). Installed apps on v1.0.4+ then show it in
+   **Settings → App updates** on their next daily check.
+7. **Watch the rollout.** Opted-in installs report the new version to the
+   [telemetry dashboard](https://telemetry.tesair.co/dashboard).
+
 Supply these environment variables outside the repository:
 
 | Variables | Purpose |
