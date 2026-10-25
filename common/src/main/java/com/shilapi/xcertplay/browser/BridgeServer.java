@@ -102,9 +102,7 @@ final class BridgeServer extends NanoWSD {
         if (current == null || clients.isEmpty()) return;
         FrameQueue.Frame frame = new FrameQueue.Frame(VideoFormat.packet(data, current.config, key, pts), key,
                 System.nanoTime(), current.json, current.epoch);
-        for (Client client : clients) if (!client.queue.offer(frame)) {
-            client.recordQueueRecovery(); keyframe.run();
-        }
+        for (Client client : clients) if (!client.queue.offer(frame)) client.requestKeyframe(false);
     }
     @Override public Response serve(IHTTPSession session) {
         if ("websocket".equalsIgnoreCase(session.getHeaders().get("upgrade"))) {
@@ -211,7 +209,8 @@ final class BridgeServer extends NanoWSD {
         clients.clear();
     }
     private final class Client extends WebSocket {
-        private final FrameQueue queue = new FrameQueue();
+        private final FrameQueue queue = new FrameQueue(System::nanoTime, this::recordQueueRecovery);
+        private final Object dispatchLock = new Object(), keyRequestLock = new Object();
         private final AtomicBoolean alive = new AtomicBoolean();
         private final AtomicReference<String> pendingStatus = new AtomicReference<>();
         // A regular status update must not replace an unsent consent change.
@@ -223,7 +222,8 @@ final class BridgeServer extends NanoWSD {
         private final BrowserLatencyStats latency = new BrowserLatencyStats();
         private final byte[] frameWriteBuffer = new byte[CoalescedWebSocketFrame.BUFFER_SIZE];
         private Thread sender;
-        private long lastTouch, lastKeyRequest, lastViewport;
+        private long lastTouch, lastViewport;
+        private long lastKeyRequest = -500;
         private volatile long lastAck, acknowledgedPts = -1;
         private long lastBrowserDiagnostic = -1000, lastLatencyDiagnostic = -4000, lastQueueDiagnostic = -10000;
         private volatile int[] viewportSize;
@@ -231,7 +231,10 @@ final class BridgeServer extends NanoWSD {
         @Override public synchronized void sendFrame(WebSocketFrame frame) throws IOException {
             super.sendFrame(new CoalescedWebSocketFrame(frame, frameWriteBuffer));
         }
-        void reset() { queue.reset(); sentFrames.clear(); sendSignal.signal(); }
+        void reset() {
+            synchronized (dispatchLock) { queue.reset(); sentFrames.clear(); }
+            sendSignal.signal();
+        }
         @Override protected void onOpen() {
             synchronized (clients) {
                 if (!running || !clients.isEmpty()) { reject("viewer_busy", "One browser is already connected."); return; }
@@ -240,7 +243,7 @@ final class BridgeServer extends NanoWSD {
             lastAck = SystemClock.elapsedRealtime();
             record("viewer_open");
             browserStatus(status, false); connectionChanged.run();
-            sender = new Thread(this::sendLoop, "DiPlayBrowserFrames"); sender.start(); keyframe.run();
+            sender = new Thread(this::sendLoop, "DiPlayBrowserFrames"); sender.start(); requestKeyframe(false);
         }
         private void sendLoop() {
             String sentFormat = null;
@@ -250,6 +253,7 @@ final class BridgeServer extends NanoWSD {
             try {
                 while (alive.get() && running) {
                     long observedWake = sendSignal.version();
+                    if (video != null && queue.waitingForKey()) requestKeyframe(false);
                     String timings = latency.report(System.nanoTime()); if (timings != null) record(timings);
                     String consent = pendingConsent.getAndSet(null); if (consent != null) send(consent);
                     String text = pendingStatus.getAndSet(null); if (text != null) send(text);
@@ -269,20 +273,26 @@ final class BridgeServer extends NanoWSD {
                             ackRecovery = true;
                             record("render_ack_recovery pending=" + sentFrames.size());
                             reset();
-                            send("{\"type\":\"recover\"}"); keyframe.run();
+                            send("{\"type\":\"recover\"}"); requestKeyframe(false);
                             continue;
                         }
                         long waitStarted = System.nanoTime();
-                        sendSignal.awaitChange(observedWake, Math.max(1, 1501 - (SystemClock.elapsedRealtime() - sentAt)));
+                        long waitMillis = Math.max(1, 1501 - (SystemClock.elapsedRealtime() - sentAt));
+                        sendSignal.awaitChange(observedWake, queue.waitingForKey() ? Math.min(500, waitMillis) : waitMillis);
                         latency.waited(System.nanoTime() - waitStarted); continue;
                     }
                     FrameQueue.Frame next = queue.poll();
-                    if (next == null || next.epoch() != videoGeneration()) continue;
-                    if (!next.format().equals(sentFormat)) { send(next.format()); sentFormat = next.format(); }
+                    if (next == null) continue;
                     long pts = ByteBuffer.wrap(next.packet(), 1, 8).getLong();
                     long sendStarted = System.nanoTime();
+                    synchronized (dispatchLock) {
+                        Video current = video;
+                        if (current == null || next.epoch() != current.epoch || !queue.current(next)) continue;
+                        sentFrames.put(pts, new SentFrame(next.epoch(), sendStarted));
+                    }
+                    // No queue/dispatch lock spans socket writes: iPhone frames and resets stay nonblocking.
+                    if (!next.format().equals(sentFormat)) { send(next.format()); sentFormat = next.format(); }
                     latency.queued(sendStarted - next.queuedNanos());
-                    sentFrames.put(pts, new SentFrame(next.epoch(), sendStarted));
                     send(next.packet());
                     latency.written(System.nanoTime() - sendStarted);
                     sentAt = SystemClock.elapsedRealtime();
@@ -299,13 +309,16 @@ final class BridgeServer extends NanoWSD {
                 JSONObject message = new JSONObject(frame.getTextPayload()); long now = SystemClock.elapsedRealtime();
                 switch (message.optString("type")) {
                     case "ack": {
-                        long pts = message.optLong("pts", -1); SentFrame sent = sentFrames.get(pts);
-                        if (sent != null && sent.epoch == videoGeneration() && sentFrames.remove(pts, sent)) {
+                        long pts = message.optLong("pts", -1); SentFrame sent;
+                        synchronized (dispatchLock) {
+                            sent = sentFrames.get(pts);
+                            Video current = video;
+                            if (sent == null || current == null || sent.epoch != current.epoch || !sentFrames.remove(pts, sent)) break;
                             sentFrames.keySet().removeIf(value -> value <= pts);
                             lastAck = now; acknowledgedPts = Math.max(acknowledgedPts, pts);
-                            latency.acknowledged(System.nanoTime() - sent.startedNanos);
-                            sendSignal.signal(); rendered.accept(sent.epoch);
                         }
+                        latency.acknowledged(System.nanoTime() - sent.startedNanos);
+                        sendSignal.signal(); rendered.accept(sent.epoch);
                         break;
                     }
                     case "ping": lastAck = now; pendingPong.set(true); sendSignal.signal(); break;
@@ -322,7 +335,7 @@ final class BridgeServer extends NanoWSD {
                         }
                         break;
                     case "keyframe":
-                        if (now - lastKeyRequest > 500) { lastKeyRequest = now; reset(); keyframe.run(); } break;
+                        requestKeyframe(true); break;
                     case "gesture":
                         if (video == null || now - lastTouch < 40) return;
                         lastTouch = now; gesture.accept(message); break;
@@ -344,11 +357,27 @@ final class BridgeServer extends NanoWSD {
             try { close(WebSocketFrame.CloseCode.PolicyViolation, message, false); } catch (IOException ignored) { }
             finish();
         }
-        private void recordQueueRecovery() {
+        private void recordQueueRecovery(FrameQueue.Recovery recovery) {
+            record("frame_queue_recovery reason=" + recovery.reason + " dropped=" + recovery.droppedFrames
+                    + " bytes=" + recovery.droppedBytes + " oldestAgeMs=" + recovery.oldestAgeNanos / 1_000_000);
+            sendSignal.signal();
+        }
+        private void requestKeyframe(boolean resetQueue) {
+            if (!alive.get() || !running) return;
+            // A browser reset invalidates its ACK credits even when an upstream IDR request is cooling down.
+            if (resetQueue) reset();
             long now = SystemClock.elapsedRealtime();
-            if (now - lastQueueDiagnostic >= 10000) {
-                lastQueueDiagnostic = now; record("frame_queue_recovery");
+            synchronized (keyRequestLock) {
+                if (now - lastKeyRequest < 500) return;
+                lastKeyRequest = now;
             }
+            if (now - lastQueueDiagnostic >= 10000) {
+                long skipped = queue.takeSkipped();
+                if (skipped > 0) {
+                    lastQueueDiagnostic = now; record("frame_queue_waiting skipped=" + skipped);
+                }
+            }
+            keyframe.run();
         }
         private void recordClose(String reason, boolean remote, int code) {
             if (closeRecorded.compareAndSet(false, true)) record("viewer_close reason=" + reason

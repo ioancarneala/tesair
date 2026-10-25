@@ -176,6 +176,81 @@ public class BrowserConnectionHealthTest {
         assertEquals(1, server.clientCount());
     }
 
+    @Test public void resetBetweenPollAndDispatchCannotReintroduceOldFrameCredits() throws Exception {
+        await(() -> senderWaitingIn(FrameQueue.class, "poll"));
+        Object dispatchLock = ReflectionHelpers.getField(client, "dispatchLock");
+        long oldPts;
+        synchronized (dispatchLock) {
+            server.videoConfig(new byte[]{0, 0, 0, 1, 0x67, 0x64, 0, 0x28}, 1920, 1080);
+            oldPts = ++pts;
+            server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, oldPts);
+            await(() -> {
+                Thread sender = ReflectionHelpers.getField(client, "sender");
+                return sender.getState() == Thread.State.BLOCKED;
+            });
+            ReflectionHelpers.callInstanceMethod(client, "reset");
+            server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+        }
+        await(() -> sentFrames().containsKey(pts));
+        assertFalse(sentFrames().containsKey(oldPts));
+        message("{\"type\":\"ack\",\"pts\":" + oldPts + "}");
+        assertEquals(1, sentFrames().size());
+        message("{\"type\":\"ack\",\"pts\":" + pts + "}");
+        assertTrue(sentFrames().isEmpty());
+        assertEquals(1, server.clientCount());
+    }
+
+    @Test public void lostIdrRequestsAreThrottledAndRetriedWithoutMoreIncomingFrames() throws Exception {
+        java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+        server.setKeyframeHandler(requests::incrementAndGet);
+        server.videoConfig(new byte[]{0, 0, 0, 1, 0x67, 0x64, 0, 0x28}, 1920, 1080);
+        ShadowSystemClock.advanceBy(Duration.ofMillis(500));
+        message("{\"type\":\"ping\"}");
+        await(() -> requests.get() == 1);
+        for (int i = 0; i < 100; i++) server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertEquals(1, requests.get());
+        assertEquals(0, events.stream().filter(value -> value.startsWith("frame_queue_recovery")).count());
+        ShadowSystemClock.advanceBy(Duration.ofMillis(500));
+        await(() -> requests.get() == 2);
+        assertEquals(1, server.clientCount());
+        server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+        await(() -> sentFrames().containsKey(pts));
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        assertFalse(queue.waitingForKey());
+        assertEquals(2, requests.get());
+    }
+
+    @Test public void browserResetDuringIdrCooldownClearsCreditsAndRetriesWhenAllowed() throws Exception {
+        fillFrameWindow();
+        java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+        server.setKeyframeHandler(requests::incrementAndGet);
+        message("{\"type\":\"keyframe\"}");
+        assertTrue(sentFrames().isEmpty());
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        assertTrue(queue.waitingForKey());
+        assertEquals(0, requests.get());
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertTrue(sentFrames().isEmpty());
+        ShadowSystemClock.advanceBy(Duration.ofMillis(500));
+        await(() -> requests.get() == 1);
+        server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+        await(() -> sentFrames().containsKey(pts));
+        assertEquals(1, server.clientCount());
+    }
+
+    @Test public void aFullCreditWindowToleratesAShortBurstAndLogsOnlyActualRecovery() throws Exception {
+        fillFrameWindow();
+        for (int i = 0; i < FrameQueue.MAX_FRAMES; i++)
+            server.frame(new byte[]{0, 0, 1, 0x65, 1}, i == 0, ++pts);
+        assertEquals(0, events.stream().filter(value -> value.startsWith("frame_queue_recovery")).count());
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertEquals(1, events.stream().filter(value -> value.startsWith("frame_queue_recovery reason=frame_capacity dropped=12 bytes=")).count());
+        for (int i = 0; i < 100; i++) server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertEquals(1, events.stream().filter(value -> value.startsWith("frame_queue_recovery")).count());
+        assertEquals(3, sentFrames().size());
+        assertEquals(1, server.clientCount());
+    }
+
     private void fillFrameWindow() throws Exception {
         server.videoConfig(new byte[]{0, 0, 0, 1, 0x67, 0x64, 0, 0x28}, 1920, 1080);
         for (int i = 0; i < 3; i++) {

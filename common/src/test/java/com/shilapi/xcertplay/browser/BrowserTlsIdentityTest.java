@@ -132,6 +132,53 @@ public class BrowserTlsIdentityTest {
         assertEquals(f.chain(), TlsIdentity.parseCertificates(pem.toString().getBytes(StandardCharsets.US_ASCII)));
     }
 
+    @Test public void diagnosticSnapshotContainsOnlyStablePublicCertificateFacts() throws Exception {
+        Fixture f = new Fixture();
+        X509Certificate[] chain = {f.leaf, f.intermediate};
+        TlsIdentity.Diagnostics snapshot = TlsIdentity.diagnostics(chain, true, NOW);
+        assertTrue(snapshot.available); assertTrue(snapshot.trusted); assertTrue(snapshot.hostnameMatch);
+        assertEquals(BEFORE.getTime(), snapshot.notBeforeMillis);
+        assertEquals(AFTER.getTime(), snapshot.notAfterMillis);
+        assertEquals(2, snapshot.chainLength);
+        assertEquals(TlsIdentity.Validity.CURRENT, snapshot.validity);
+        chain[0] = f.root;
+        assertTrue(snapshot.hostnameMatch);
+        assertEquals(2, snapshot.chainLength);
+        for (java.lang.reflect.Field field : TlsIdentity.Diagnostics.class.getDeclaredFields()) {
+            assertTrue(java.lang.reflect.Modifier.isFinal(field.getModifiers()));
+            assertTrue(field.getType().isPrimitive() || field.getType() == TlsIdentity.Validity.class);
+        }
+    }
+
+    @Test public void diagnosticValidityDistinguishesClockExpiryHostnameAndTrust() throws Exception {
+        Fixture f = new Fixture();
+        X509Certificate[] chain = {f.leaf, f.intermediate};
+        TlsIdentity.Diagnostics before = TlsIdentity.diagnostics(chain, true, BEFORE.getTime() - 1);
+        assertEquals(TlsIdentity.Validity.CLOCK_BEFORE_VALIDITY, before.validity);
+        assertFalse(before.trusted); assertTrue(before.hostnameMatch);
+        TlsIdentity.Diagnostics expired = TlsIdentity.diagnostics(chain, true, AFTER.getTime() + 1);
+        assertEquals(TlsIdentity.Validity.EXPIRED, expired.validity);
+        assertFalse(expired.trusted);
+        TlsIdentity.Diagnostics untrusted = TlsIdentity.diagnostics(chain, false, NOW);
+        assertEquals(TlsIdentity.Validity.UNTRUSTED, untrusted.validity);
+        assertFalse(untrusted.trusted); assertTrue(untrusted.hostnameMatch);
+        X509Certificate wrongName = certificate(f.device, "CN=" + HOST, f.issuer,
+                f.intermediate.getSubjectX500Principal(), false, "unrelated.example", 1, BEFORE, AFTER);
+        TlsIdentity.Diagnostics mismatch = TlsIdentity.diagnostics(new X509Certificate[]{wrongName}, true, NOW);
+        assertEquals(TlsIdentity.Validity.HOSTNAME_MISMATCH, mismatch.validity);
+        assertFalse(mismatch.hostnameMatch); assertFalse(mismatch.trusted);
+    }
+
+    @Test public void missingCertificateHasAnExplicitEmptyDiagnosticSnapshot() {
+        for (X509Certificate[] chain : new X509Certificate[][]{null, new X509Certificate[0]}) {
+            TlsIdentity.Diagnostics snapshot = TlsIdentity.diagnostics(chain, true, NOW);
+            assertFalse(snapshot.available); assertFalse(snapshot.trusted); assertFalse(snapshot.hostnameMatch);
+            assertEquals(0, snapshot.chainLength);
+            assertEquals(0, snapshot.notBeforeMillis); assertEquals(0, snapshot.notAfterMillis);
+            assertEquals(TlsIdentity.Validity.MISSING, snapshot.validity);
+        }
+    }
+
     @Test public void failedInstallationRollsBackWithoutTouchingLocalFallback() throws Exception {
         Fixture f = new Fixture(); MemoryStore spi = new MemoryStore(); TestStore store = new TestStore(spi); store.load(null);
         X509Certificate old = certificate(f.device, "CN=Old certificate", f.issuer, f.intermediate.getSubjectX500Principal(), false, HOST, 1, BEFORE, AFTER);

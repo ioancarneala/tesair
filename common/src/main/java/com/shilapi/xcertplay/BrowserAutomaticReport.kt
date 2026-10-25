@@ -3,6 +3,8 @@ package com.shilapi.xcertplay
 import android.content.Context
 import android.os.Build
 import android.util.AtomicFile
+import com.shilapi.xcertplay.browser.BrowserTlsDiagnostics
+import com.shilapi.xcertplay.browser.TlsIdentity
 import java.io.File
 import java.io.FileOutputStream
 
@@ -49,6 +51,10 @@ internal object BrowserAutomaticReport {
             appendLine()
             appendLine("--- Current receiver state ---")
             appendLine(BrowserReliabilityDiagnostics.snapshot(context))
+            appendLine()
+            appendLine("--- HTTPS identity state ---")
+            appendLine(BrowserTlsDiagnostics.format(TlsIdentity.diagnostics(),
+                DiPlaySessionService.currentBrowserOutput()?.certificateDiagnostics))
             appendLine()
             appendLine("--- Recent own-app process exits ---")
             appendLine(ProcessExitDiagnostics.report(context))

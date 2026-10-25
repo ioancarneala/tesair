@@ -90,6 +90,49 @@ public final class TlsIdentity {
     public static synchronized long sharedNotAfter() { return sharedContext == null ? 0 : sharedPreferences().getLong("not_after", 0); }
     public static synchronized String trustedHostname() { return hasTrustedCertificate() ? TRUSTED_HOST : null; }
 
+    public enum Validity { MISSING, CURRENT, CLOCK_BEFORE_VALIDITY, EXPIRED, HOSTNAME_MISMATCH, UNTRUSTED }
+
+    /** Public certificate facts only; this snapshot never retains a key, certificate, or storage alias. */
+    public static final class Diagnostics {
+        public final boolean available, trusted, hostnameMatch;
+        public final long notBeforeMillis, notAfterMillis;
+        public final int chainLength;
+        public final Validity validity;
+        Diagnostics(boolean available, boolean trusted, boolean hostnameMatch,
+                long notBeforeMillis, long notAfterMillis, int chainLength, Validity validity) {
+            this.available = available; this.trusted = trusted; this.hostnameMatch = hostnameMatch;
+            this.notBeforeMillis = notBeforeMillis; this.notAfterMillis = notAfterMillis;
+            this.chainLength = chainLength; this.validity = validity;
+        }
+    }
+
+    /** First trust check may use AndroidKeyStore; call from a diagnostic worker. */
+    public static synchronized Diagnostics diagnostics() {
+        boolean trusted = hasTrustedCertificate();
+        X509Certificate[] chain = LIVE_KEYS.publicChain();
+        return diagnostics(chain, trusted && chain.length > 0 && chain[0].equals(trustedCertificate),
+                System.currentTimeMillis());
+    }
+
+    static Diagnostics diagnostics(X509Certificate[] chain, boolean trusted, long now) {
+        if (chain == null || chain.length == 0)
+            return new Diagnostics(false, false, false, 0, 0, 0, Validity.MISSING);
+        X509Certificate leaf = chain[0];
+        boolean hostnameMatch = false;
+        try {
+            Collection<List<?>> names = leaf.getSubjectAlternativeNames();
+            if (names != null) for (List<?> name : names) {
+                if (name.size() >= 2 && Integer.valueOf(2).equals(name.get(0))
+                        && TRUSTED_HOST.equalsIgnoreCase(String.valueOf(name.get(1)))) hostnameMatch = true;
+            }
+        } catch (CertificateException ignored) { }
+        long before = leaf.getNotBefore().getTime(), after = leaf.getNotAfter().getTime();
+        Validity validity = now < before ? Validity.CLOCK_BEFORE_VALIDITY : now > after ? Validity.EXPIRED
+                : !hostnameMatch ? Validity.HOSTNAME_MISMATCH : !trusted ? Validity.UNTRUSTED : Validity.CURRENT;
+        return new Diagnostics(true, validity == Validity.CURRENT, hostnameMatch,
+                before, after, chain.length, validity);
+    }
+
 
     private TlsIdentity() { }
 
@@ -483,6 +526,9 @@ public final class TlsIdentity {
             prune();
             for (Identity identity : snapshots.values()) if (identity.storageAlias.equals(alias)) return true;
             return false;
+        }
+        synchronized X509Certificate[] publicChain() {
+            return current == null ? new X509Certificate[0] : current.chain.clone();
         }
         private void prune() {
             sockets.keySet().removeIf(Socket::isClosed);

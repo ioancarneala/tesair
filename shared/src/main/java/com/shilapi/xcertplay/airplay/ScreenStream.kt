@@ -116,8 +116,16 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
                 listener.onFrame(ScreenCodec.lengthPrefixedToAnnexB(payload), ScreenCodec.senderNanos(header), arrivalNanos)
             }
             OP_VIDEO_CONFIG -> {
-                val (codec, codecData) = ScreenCodec.detectConfig(body)
-                Log.i(TAG, "video codec config codec=$codec body=${body.size} data=${codecData.size}")
+                val (codec, codecData) = try {
+                    ScreenCodec.detectConfig(body)
+                } catch (error: IllegalArgumentException) {
+                    runCatching { onDiagnostic("Video: config codec=unknown configBytes=${body.size} result=rejected") }
+                    throw error
+                }
+                val diagnostic = "Video: config codec=${codec.name.lowercase()} " +
+                    "configBytes=${body.size} dataBytes=${codecData.size} result=accepted"
+                Log.i(TAG, diagnostic)
+                runCatching { onDiagnostic(diagnostic) }
                 listener.onCodec(codec)
                 listener.onConfig(codecData)
             }
@@ -200,23 +208,98 @@ object ScreenCodec {
     }
 
     fun detectConfig(payload: ByteArray): Pair<VideoCodec, ByteArray> {
-        for (index in 4..payload.size - 4) {
-            val fourcc = String(payload, index, 4, Charsets.US_ASCII)
-            when (fourcc) {
-                "hvcC" -> return VideoCodec.H265 to payload.copyOfRange(index + 4, payload.size)
-                "avcC" -> return VideoCodec.H264 to payload.copyOfRange(index + 4, payload.size)
+        if (validAvcConfig(payload)) return VideoCodec.H264 to payload
+        if (validHevcConfig(payload)) return VideoCodec.H265 to payload
+
+        // A fourcc inside an SPS or unknown data is not a configuration box.
+        var cursor = 0
+        var selected: Pair<VideoCodec, ByteArray>? = null
+        while (cursor + 8 <= payload.size) {
+            val size = readU32Be(payload, cursor).toLong() and 0xffff_ffffL
+            val headerSize = if (size == 1L) 16 else 8
+            if (cursor + headerSize > payload.size) break
+            val boxSize = when (size) {
+                0L -> (payload.size - cursor).toLong()
+                1L -> {
+                    if (readU32Be(payload, cursor + 8) != 0) break
+                    readU32Be(payload, cursor + 12).toLong() and 0xffff_ffffL
+                }
+                else -> size
             }
+            if (boxSize < headerSize || boxSize > payload.size - cursor) break
+            val end = cursor + boxSize.toInt()
+            val codec = when (String(payload, cursor + 4, 4, Charsets.US_ASCII)) {
+                "avcC" -> VideoCodec.H264
+                "hvcC" -> VideoCodec.H265
+                else -> null
+            }
+            if (codec != null) {
+                require(selected == null) { "Ambiguous video configuration" }
+                val data = payload.copyOfRange(cursor + headerSize, end)
+                require(if (codec == VideoCodec.H264) validAvcConfig(data) else validHevcConfig(data)) {
+                    "Invalid video configuration"
+                }
+                selected = codec to data
+            }
+            cursor = end
         }
-        return if (looksLikeAvcC(payload)) VideoCodec.H264 to payload else VideoCodec.H265 to payload
+        require(cursor == payload.size && selected != null) { "Unknown video configuration" }
+        return selected
     }
 
-    private fun looksLikeAvcC(payload: ByteArray): Boolean {
-        if (payload.size < 9) return false
-        if ((payload[5].toInt() and 0x1f) < 1) return false
-        val spsLength = readU16Be(payload, 6)
-        if (8 + spsLength > payload.size) return false
-        return (payload[8].toInt() and 0x1f) == 7
+    private fun validAvcConfig(data: ByteArray): Boolean {
+        if (data.size < 7 || data[0] != 1.toByte()) return false
+        var cursor = 6
+        fun parameterSets(count: Int, type: Int, minimumLength: Int): Boolean {
+            repeat(count) {
+                if (cursor + 2 > data.size) return false
+                val length = readU16Be(data, cursor)
+                cursor += 2
+                if (length < minimumLength || length > data.size - cursor || (data[cursor].toInt() and 31) != type) return false
+                cursor += length
+            }
+            return true
+        }
+        val spsCount = data[5].toInt() and 31
+        if (spsCount == 0 || !parameterSets(spsCount, 7, 4) || cursor >= data.size) return false
+        val ppsCount = data[cursor++].toInt() and 255
+        if (ppsCount == 0 || !parameterSets(ppsCount, 8, 1)) return false
+        if (cursor == data.size) return true
+        // High-profile records may append chroma/bit-depth fields and SPS extension NALs.
+        if ((data[1].toInt() and 255) !in AVC_EXTENDED_PROFILES || cursor + 4 > data.size) return false
+        cursor += 3
+        val extensionCount = data[cursor++].toInt() and 255
+        return parameterSets(extensionCount, 13, 1) && cursor == data.size
     }
+
+    private fun validHevcConfig(data: ByteArray): Boolean {
+        if (data.size < 23 || data[0] != 1.toByte()) return false
+        val arrayCount = data[22].toInt() and 255
+        var cursor = 23
+        var hasNal = false
+        repeat(arrayCount) {
+            if (cursor + 3 > data.size) return false
+            val type = data[cursor++].toInt() and 63
+            val count = readU16Be(data, cursor)
+            cursor += 2
+            repeat(count) {
+                if (cursor + 2 > data.size) return false
+                val length = readU16Be(data, cursor)
+                cursor += 2
+                if (length < 2 || length > data.size - cursor ||
+                    ((data[cursor].toInt() ushr 1) and 63) != type || (data[cursor + 1].toInt() and 7) == 0) return false
+                cursor += length
+                hasNal = true
+            }
+        }
+        // Parameter sets may be supplied in-band; then the fixed HEVC header must identify the record.
+        val fixedHeader = (data[13].toInt() and 0xf0) == 0xf0 &&
+            (data[15].toInt() and 0xfc) == 0xfc && (data[16].toInt() and 0xfc) == 0xfc &&
+            (data[17].toInt() and 0xf8) == 0xf8 && (data[18].toInt() and 0xf8) == 0xf8
+        return (hasNal || fixedHeader) && cursor == data.size
+    }
+
+    private val AVC_EXTENDED_PROFILES = setOf(100, 110, 122, 144, 244, 44, 83, 86, 118, 128, 138, 139, 134, 135)
 
     private fun readU16Be(source: ByteArray, offset: Int): Int =
         ((source[offset].toInt() and 0xff) shl 8) or (source[offset + 1].toInt() and 0xff)

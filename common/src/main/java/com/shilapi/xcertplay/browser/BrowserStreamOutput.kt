@@ -27,8 +27,10 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         Thread(runnable, "DiPlayBrowserRecovery").apply { isDaemon = true }
     }
     private val closed = AtomicBoolean()
+    private val tlsDiagnostics = BrowserTlsDiagnostics(app)
     private val certificates = SharedCertificateSync(context.applicationContext,
         BuildConfig.BROWSER_CERTIFICATE_ENDPOINT, BuildConfig.BROWSER_CERTIFICATE_DOWNLOAD_TOKEN) {
+        recordTlsDiagnostics()
         main.post { if (!closed.get()) onStatusChanged() }
     }
     private val mediaLock = Any()
@@ -48,6 +50,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     private var lastContact: AirPlayContact? = null
     private var pictureWidth = 0
     private var pictureHeight = 0
+    private var formatFailure: Runnable? = null
 
     @Volatile var running: Boolean = false
         private set
@@ -59,10 +62,12 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     @Volatile var onTouch: (List<AirPlayContact>) -> Unit = {}
     var onStatusChanged: () -> Unit = {}
     var onFirstFrameRendered: () -> Unit = {}
+    @Volatile var onVideoFailure: (Int, String) -> Unit = { _, _ -> }
     @Volatile var onDiagnostic: (String) -> Unit = {}
     @Volatile var onClientConnection: (Boolean) -> Unit = {}
     val clientCount: Int get() = server.clientCount()
     val certificateSyncState: SharedCertificateSync.State get() = certificates.state
+    internal val certificateDiagnostics: SharedCertificateSync.Diagnostics get() = certificates.diagnostics
     val hasRenderedVideo: Boolean get() = synchronized(mediaLock) {
         !closed.get() && configured && renderedGeneration == mediaGeneration
     }
@@ -100,12 +105,22 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     }
 
     /** Correlate the first compressed frame with its actual receiver connection attempt. */
-    fun setTelemetryAttempt(attempt: Int) { telemetryAttempt = attempt }
+    fun setTelemetryAttempt(attempt: Int) = synchronized(mediaLock) {
+        clearFormatFailureLocked()
+        telemetryAttempt = attempt
+    }
 
     fun setTelemetryVideoProfile(fps: Int) { server.setRequestedFps(fps) }
 
     fun telemetryConsentChanged() {
         if (!closed.get()) server.telemetryConsentChanged()
+    }
+
+    /** Called by certificate/health workers; no trust-store work runs on media callbacks. */
+    internal fun recordTlsDiagnostics() {
+        if (!closed.get()) runCatching {
+            tlsDiagnostics.record(TlsIdentity.diagnostics(), certificates.diagnostics)
+        }
     }
 
     /** A native iPhone layout change leaves the encoded canvas and decoder running. */
@@ -126,6 +141,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
             running = true
             record("server_started")
             certificates.start()
+            recordTlsDiagnostics()
             updateStatus("Browser ready · connect an iPhone in TesAir")
         } catch (error: Exception) {
             record("server_start_failed")
@@ -150,10 +166,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         synchronized(mediaLock) {
             this.codec = codec
             if (codec != VideoCodec.H264) {
-                configured = false; server.resetVideo(); mediaGeneration++
-                BrowserTelemetry.record(app, "browser_error", mapOf("attempt" to telemetryAttempt,
-                    "reason" to "unsupported_iphone_codec", "codec" to codec.name.lowercase()))
-                updateStatus("Unsupported video format. Reconnect your iPhone in TesAir.", true)
+                awaitVideoFormatLocked("unsupported_iphone_codec", codec.name.lowercase())
             }
         }
         if (codec != VideoCodec.H264) cancelTouch()
@@ -175,17 +188,43 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
                     record("video_format width=${format.width} height=${format.height}")
                 }
                 configured = true
+                clearFormatFailureLocked()
                 updateStatus("Direct CarPlay video · ${format.width}×${format.height}")
             } catch (_: Exception) {
                 changed = true
-                configured = false; server.resetVideo(); mediaGeneration++
-                record("video_config_rejected")
-                BrowserTelemetry.record(app, "browser_error", mapOf("attempt" to telemetryAttempt,
-                    "reason" to "video_config_rejected", "codec" to "h264"))
-                updateStatus("CarPlay supplied an unsupported H.264 configuration.", true)
+                awaitVideoFormatLocked("video_config_rejected", "h264")
             }
         }
         if (changed) cancelTouch()
+    }
+
+    /** Startup can briefly send a different configuration before the negotiated H.264 stream. */
+    private fun awaitVideoFormatLocked(reason: String, codecName: String) {
+        configured = false
+        if (formatFailure != null) return
+        server.resetVideo(); mediaGeneration++; renderedGeneration = -1
+        val attempt = telemetryAttempt
+        record("video_format_pending reason=$reason codec=$codecName")
+        BrowserTelemetry.record(app, "diagnostic_feedback", mapOf("attempt" to attempt,
+            "source" to "video_format", "result" to "waiting", "reason" to reason, "codec" to codecName))
+        updateStatus("Preparing CarPlay video")
+        val task = object : Runnable {
+            override fun run() = synchronized(mediaLock) {
+                if (closed.get() || formatFailure !== this || configured || telemetryAttempt != attempt) return
+                record("video_format_recovery reason=$reason codec=$codecName")
+                BrowserTelemetry.record(app, "browser_error", mapOf("attempt" to attempt,
+                    "reason" to reason, "codec" to codecName))
+                updateStatus("Reconnecting to CarPlay")
+                onVideoFailure(attempt, reason)
+            }
+        }
+        formatFailure = task
+        main.postDelayed(task, VIDEO_FORMAT_GRACE_MILLIS)
+    }
+
+    private fun clearFormatFailureLocked() {
+        formatFailure?.let(main::removeCallbacks)
+        formatFailure = null
     }
 
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) =
@@ -210,6 +249,7 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         record(if (active) "iphone_video_active" else "iphone_video_inactive")
         synchronized(mediaLock) {
             if (!active) {
+                clearFormatFailureLocked()
                 configured = false; mediaGeneration++; renderedGeneration = -1
                 keyframeHandler = null; diagnosticHandler = null
                 server.resetVideo(); clock.reset()
@@ -334,7 +374,10 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         if (!closed.compareAndSet(false, true)) return
         cancelTouch()
         running = false; certificates.close(); recovery.shutdownNow(); server.stop()
-        synchronized(mediaLock) { configured = false; diagnosticHandler = null; keyframeHandler = null; mediaGeneration++ }
+        synchronized(mediaLock) {
+            clearFormatFailureLocked()
+            configured = false; diagnosticHandler = null; keyframeHandler = null; mediaGeneration++
+        }
         main.post { onStatusChanged() }
         status = "Browser output stopped"
     }
@@ -342,5 +385,6 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     companion object {
         private const val MAIN_SCREEN = 110
         private const val MAX_FRAME_BYTES = 4 * 1024 * 1024
+        internal const val VIDEO_FORMAT_GRACE_MILLIS = 3_000L
     }
 }

@@ -3,6 +3,7 @@ package com.shilapi.xcertplay
 import android.content.ContextWrapper
 import android.content.Intent
 import android.app.Service
+import android.app.PendingIntent
 import android.os.Build
 import android.os.Looper
 import android.os.PowerManager
@@ -471,6 +472,194 @@ class BrowserServerRecoveryTest {
             verify(runtime, times(1)).start()
         }
     }
+
+    @Test fun idleStandbyWaitsForGraceAndTeardownBeforeReleasingCpu() {
+        val finishPark = prepareStandby()
+        val lock = ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(119_999))
+        verify(runtime, never()).parkForStandby(any<() -> Unit>() ?: {})
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(1))
+        assertTrue("Teardown still owns the CPU", lock.isHeld)
+        assertTrue(ReflectionHelpers.getField(service, "standbyParking"))
+
+        finishPark()
+
+        assertFalse(lock.isHeld)
+        assertTrue(ReflectionHelpers.getField(service, "standbyParked"))
+        assertNotNull(standbyAlarm())
+        assertTrue(BrowserSessionRecovery.requested(service))
+        verify(output, never()).close()
+        verify(runtime, never()).close()
+    }
+
+    @Test fun activeIphonePreventsStandbyWithoutAnyBrowser() {
+        prepareStandby()
+        `when`(runtime.sessionActive).thenReturn(true)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "onReceiverStateChanged")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(5))
+        verify(runtime, never()).parkForStandby(any<() -> Unit>() ?: {})
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+    }
+
+    @Test fun browserPreventsStandbyWithoutAnIphone() {
+        prepareStandby()
+        browserConnection(true)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(5))
+        verify(runtime, never()).parkForStandby(any<() -> Unit>() ?: {})
+    }
+
+    @Test fun interactiveSetupPreventsStandbyOnBattery() {
+        prepareStandby()
+        ReflectionHelpers.setField(service, "screenInteractive", true)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "updateBrowserPower")
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(5))
+        verify(runtime, never()).parkForStandby(any<() -> Unit>() ?: {})
+    }
+
+    @Test fun standbyDoesNotSuspendAnInFlightBootstrapAtTheGraceDeadline() {
+        val finishPark = prepareStandby()
+        `when`(runtime.standbyReady).thenReturn(false)
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(6))
+        verify(runtime, never()).parkForStandby(any<() -> Unit>() ?: {})
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+        `when`(runtime.standbyReady).thenReturn(true)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "onReceiverStateChanged")
+        finishPark()
+        assertTrue(ReflectionHelpers.getField(service, "standbyParked"))
+    }
+
+    @Test fun restoredPowerReacquiresCpuBeforeResumingAndCancelsTheAlarm() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        finishPark()
+        doAnswer {
+            assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+            null
+        }.`when`(runtime).resumeFromStandby()
+
+        charging(true)
+
+        verify(runtime).resumeFromStandby()
+        assertFalse(ReflectionHelpers.getField(service, "standbyParked"))
+        assertNull(standbyAlarm())
+    }
+
+    @Test fun arrivalDuringTeardownCannotReleaseTheNewCpuLease() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        charging(true)
+        finishPark()
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+        assertFalse(ReflectionHelpers.getField(service, "standbyParked"))
+        assertNull(standbyAlarm())
+    }
+
+    @Test fun manualConnectDuringParkTeardownCannotBePutBackToSleep() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        `when`(runtime.standbyParked).thenReturn(false)
+        finishPark()
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+        assertFalse(ReflectionHelpers.getField(service, "standbyParked"))
+        assertNull(standbyAlarm())
+    }
+
+    @Test fun browserWakeFromTheNetworkThreadIsMarshalledToMain() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        finishPark()
+        Thread { browserConnection(true) }.apply { start(); join() }
+        assertTrue(ReflectionHelpers.getField(service, "standbyParked"))
+        shadowOf(Looper.getMainLooper()).idle()
+        assertFalse(ReflectionHelpers.getField(service, "standbyParked"))
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+        verify(runtime).resumeFromStandby()
+    }
+
+    @Test fun onlyTheCurrentParkedAlarmCanRequestAProbe() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        finishPark()
+        val token = ReflectionHelpers.getField<String>(service, "standbyAlarmToken")
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STANDBY_PROBE)
+            .putExtra(BrowserStandbyAlarm.EXTRA_TOKEN, "stale"), 0, 2)
+        verify(runtime, never()).resumeFromStandby()
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STANDBY_PROBE)
+            .putExtra(BrowserStandbyAlarm.EXTRA_TOKEN, token), 0, 3)
+        verify(runtime).resumeFromStandby()
+        assertTrue(ReflectionHelpers.getField(service, "standbyProbe"))
+        assertTrue(ReflectionHelpers.getField<PowerManager.WakeLock>(service, "cpuLock").isHeld)
+    }
+
+    @Test fun aDeliveredAlarmCannotUndoTheUsersStop() {
+        configureReceiver()
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STOP), 0, 1)
+        BrowserStandbyAlarm.acquireHandoff(service, "stale")
+        val handoff = ReflectionHelpers.getStaticField<PowerManager.WakeLock>(BrowserStandbyAlarm::class.java, "handoff")
+        assertTrue(handoff.isHeld)
+        assertEquals(Service.START_NOT_STICKY,
+            service.onStartCommand(Intent(DiPlaySessionService.ACTION_STANDBY_PROBE)
+                .putExtra(BrowserStandbyAlarm.EXTRA_TOKEN, "stale"), 0, 2))
+        assertFalse(BrowserSessionRecovery.requested(service))
+        assertFalse("Even a rejected probe releases the receiver-to-service handoff", handoff.isHeld)
+        verify(output, never()).start()
+        verify(runtime, never()).resumeFromStandby()
+    }
+
+    @Test fun anOldProbeCannotInterruptANewlyStartedSessionAfterStop() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        finishPark()
+        val token = ReflectionHelpers.getField<String>(service, "standbyAlarmToken")
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STOP), 0, 2)
+        service.onStartCommand(Intent(), 0, 3)
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STANDBY_PROBE)
+            .putExtra(BrowserStandbyAlarm.EXTRA_TOKEN, token), 0, 4)
+        assertTrue(BrowserSessionRecovery.requested(service))
+        assertFalse(ReflectionHelpers.getField(service, "standbyProbe"))
+        verify(runtime, never()).resumeFromStandby()
+    }
+
+    @Test fun stopAndLateParkCompletionCancelAllWakeMechanisms() {
+        val finishPark = prepareStandby()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMinutes(2))
+        service.onStartCommand(Intent(DiPlaySessionService.ACTION_STOP), 0, 2)
+        finishPark()
+        assertFalse(BrowserSessionRecovery.requested(service))
+        assertNull(ReflectionHelpers.getField(service, "cpuLock"))
+        assertNull(standbyAlarm())
+    }
+
+    private fun prepareStandby(): () -> Unit {
+        configureReceiver()
+        `when`(output.running).thenReturn(true)
+        start()
+        completeAttempt()
+        var complete: (() -> Unit)? = null
+        `when`(runtime.standbyReady).thenReturn(true)
+        doAnswer {
+            `when`(runtime.standbyParked).thenReturn(true)
+            complete = it.getArgument(0)
+            true
+        }.`when`(runtime).parkForStandby(any<() -> Unit>() ?: {})
+        ReflectionHelpers.setField(service, "charging", false)
+        ReflectionHelpers.setField(service, "screenInteractive", false)
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "updateBrowserPower")
+        return { requireNotNull(complete) { "Parking was not requested" }.invoke() }
+    }
+
+    private fun standbyAlarm(): PendingIntent? = PendingIntent.getBroadcast(service, 52,
+        Intent(service, BrowserStandbyReceiver::class.java).setAction(BrowserStandbyAlarm.ACTION),
+        PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE)
+
+    private fun charging(connected: Boolean) {
+        ReflectionHelpers.callInstanceMethod<Unit>(service, "onChargingChanged",
+            ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, connected))
+        shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun browserConnection(connected: Boolean) = ReflectionHelpers.callInstanceMethod<Unit>(service,
+        "onBrowserClientConnection", ReflectionHelpers.ClassParameter.from(Boolean::class.javaPrimitiveType, connected))
 
     private fun configureReceiver() {
         DiPlayPreferences.saveAutoConnect(service, false)

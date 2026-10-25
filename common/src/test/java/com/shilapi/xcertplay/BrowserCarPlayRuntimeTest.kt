@@ -15,6 +15,7 @@ import com.shilapi.xcertplay.browser.BrowserStreamOutput
 import com.shilapi.xcertplay.media.AndroidMediaSink
 import com.shilapi.xcertplay.orchestration.CarPlayController
 import com.shilapi.xcertplay.orchestration.CarPlayRuntimeConfig
+import com.shilapi.xcertplay.orchestration.CarPlayStatus
 import com.shilapi.xcertplay.orchestration.MfiTarget
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
 import com.shilapi.xcertplay.transport.VehicleStatusProvider
@@ -72,6 +73,7 @@ class BrowserCarPlayRuntimeTest {
         sink = mock(AndroidMediaSink::class.java)
         `when`(controller.showViewArea(anyInt())).thenReturn(true)
         `when`(controller.awaitClosed(4_000)).thenReturn(true)
+        `when`(sink.awaitVideoReleased(2_000)).thenReturn(true)
         set("requested", true)
         set("controller", controller)
         set("sink", sink)
@@ -218,6 +220,260 @@ class BrowserCarPlayRuntimeTest {
         set("activeSession", null)
         set("requested", false)
         assertFalse(runtime.manualRecoveryPending)
+    }
+
+    @Test fun standbyIsOnlyAvailableBetweenAttemptsWithoutAnActiveIphone() {
+        assertFalse(runtime.standbyReady)
+        listener().onTransportError("test interruption")
+        assertTrue(runtime.standbyReady)
+        set("preparing", true)
+        assertFalse(runtime.standbyReady)
+        assertFalse(runtime.parkForStandby {})
+        set("preparing", false)
+        set("retiring", true)
+        assertFalse(runtime.standbyReady)
+        set("retiring", false)
+        set("activeSession", mock(AirPlaySession::class.java))
+        assertTrue(runtime.sessionActive)
+        assertFalse(runtime.standbyReady)
+        set("activeSession", null)
+        set("requested", false)
+        assertFalse(runtime.standbyReady)
+    }
+
+    @Test fun parkingCancelsRetryAndFencesOldCallbacksWithoutChangingSavedSetupOrViewer() {
+        configureTestReceiver()
+        val old = listener()
+        val viewport = get<(Int, Int) -> Unit>("viewportListener")
+        output.onViewport = viewport
+        old.onTransportError("test interruption")
+        var completed = 0
+        assertTrue(runtime.parkForStandby { completed++ })
+        assertTrue(runtime.standbyParked)
+        assertFalse(runtime.standbyReady)
+        assertNull(get<Runnable?>("retry"))
+        assertEquals(0, completed)
+        assertTrue(get<Boolean>("requested"))
+        assertFalse(runtime.parkForStandby { completed++ })
+
+        old.onTransportError("late old transport error")
+        old.onSessionActive(mock(AirPlaySession::class.java))
+        assertFalse(runtime.sessionActive)
+        drainWorker()
+        assertEquals(1, completed)
+        assertEquals("Test hotspot", AirPlayPersistence.loadExistingWifiSsid(context))
+        assertEquals("test-only-1234", AirPlayPersistence.loadExistingWifiPassphrase(context))
+        assertEquals(1, mockingDetails(output).invocations.count { it.method.name == "setOnViewport" })
+        verify(output, never()).close()
+        verify(controller, times(1)).close()
+        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(30))
+        drainWorker()
+        assertNull(get<CarPlayController?>("controller"))
+        assertNull(get<Runnable?>("retry"))
+    }
+
+    @Test fun normalStartCannotWakeAParkedReceiver() {
+        listener().onTransportError("test interruption")
+        assertTrue(runtime.parkForStandby {})
+        drainWorker()
+        runtime.start()
+        assertTrue(runtime.standbyParked)
+        assertFalse(get<Boolean>("preparing"))
+        assertNull(get<Runnable?>("retry"))
+    }
+
+    @Test fun wakingDuringParkingWaitsForTheOldControllerAndStartsOnlyOnce() {
+        configureTestReceiver()
+        listener().onTransportError("test interruption")
+        var parkedCompletions = 0
+        assertTrue(runtime.parkForStandby { parkedCompletions++ })
+        var awakeCallback = false
+        runtime.onStandbyStateChanged = { if (!runtime.standbyParked) awakeCallback = true }
+        mockConstruction(CarPlayController::class.java) { _, _ -> assertTrue(awakeCallback) }.use { construction ->
+            runtime.resumeFromStandby()
+            runtime.resumeFromStandby()
+            assertTrue(awakeCallback)
+            assertFalse(runtime.standbyParked)
+            assertTrue(construction.constructed().isEmpty())
+            drainWorker()
+            assertEquals(1, parkedCompletions)
+            assertEquals(1, construction.constructed().size)
+            verify(controller, times(1)).close()
+            verify(construction.constructed().single()).start()
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun automaticWakePreservesTheConfigurationGateUntilManualReconnect() {
+        configureTestReceiver()
+        set("setupNeedsAttention", true)
+        assertTrue(runtime.parkForStandby {})
+        drainWorker()
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.resumeFromStandby()
+            drainWorker()
+            assertFalse(runtime.standbyParked)
+            assertTrue(runtime.setupNeedsAttention)
+            assertTrue(runtime.standbyReady)
+            assertTrue(construction.constructed().isEmpty())
+            runtime.reconnect()
+            drainWorker()
+            assertFalse(runtime.setupNeedsAttention)
+            assertEquals(1, construction.constructed().size)
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun manualReconnectFromParkingNotifiesTheServiceBeforePreparingAReplacement() {
+        configureTestReceiver()
+        listener().onTransportError("test interruption")
+        assertTrue(runtime.parkForStandby {})
+        drainWorker()
+        assertTrue(runtime.manualRecoveryPending)
+        var awakeCallback = false
+        runtime.onStandbyStateChanged = { if (!runtime.standbyParked) awakeCallback = true }
+        mockConstruction(CarPlayController::class.java) { _, _ -> assertTrue(awakeCallback) }.use { construction ->
+            runtime.reconnect()
+            assertTrue(awakeCallback)
+            assertFalse(runtime.standbyParked)
+            assertFalse(runtime.manualRecoveryPending)
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun stopDuringParkingFinishesTeardownWithoutPublishingAWokenController() {
+        configureTestReceiver()
+        listener().onTransportError("test interruption")
+        var parkedCompletions = 0
+        var closeCompletions = 0
+        assertTrue(runtime.parkForStandby { parkedCompletions++ })
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.resumeFromStandby()
+            runtime.close { closeCompletions++ }
+            runtime.close { closeCompletions++ }
+            runtime.resumeFromStandby()
+            drainWorker()
+            assertEquals(1, parkedCompletions)
+            assertEquals(2, closeCompletions)
+            assertFalse(runtime.standbyParked)
+            assertFalse(runtime.standbyReady)
+            assertTrue(construction.constructed().isEmpty())
+            verify(controller, times(1)).close()
+            verify(sink, times(1)).close()
+        }
+    }
+
+    @Test fun incompleteControllerTeardownCannotAuthorizeCpuStandby() {
+        `when`(controller.awaitClosed(4_000)).thenReturn(false)
+        assertIncompleteTeardownDefersStandby()
+    }
+
+    @Test fun incompleteVideoReleaseCannotAuthorizeCpuStandby() {
+        `when`(sink.awaitVideoReleased(2_000)).thenReturn(false)
+        assertIncompleteTeardownDefersStandby()
+    }
+
+    @Test fun arrivalBypassesPendingBackoffButDoesNotInterruptPreparationOrAnActiveSession() {
+        configureTestReceiver()
+        listener().onTransportError("test interruption")
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            runtime.resumeFromStandby()
+            runtime.resumeFromStandby()
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            runtime.resumeFromStandby()
+            verify(construction.constructed().single(), never()).close()
+            listener().onSessionActive(mock(AirPlaySession::class.java))
+            runtime.resumeFromStandby()
+            assertTrue(runtime.sessionActive)
+            verify(construction.constructed().single(), never()).close()
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun standbyObserversDoNotReplaceTheUiObserver() {
+        var standbyCalls = 0
+        var uiCalls = 0
+        runtime.onStandbyStateChanged = { standbyCalls++ }
+        runtime.onStatusChanged = { uiCalls++ }
+        val current = listener()
+        val session = mock(AirPlaySession::class.java)
+        current.onSessionActive(session)
+        assertEquals(1, standbyCalls)
+        assertEquals(1, uiCalls)
+        current.onSessionEnded(session)
+        assertEquals(2, standbyCalls)
+        assertEquals(2, uiCalls)
+        assertTrue(runtime.standbyReady)
+    }
+
+    @Test fun appearanceMonitoringOnlyRunsWhileAnIphoneSessionIsActive() {
+        AirPlayPersistence.saveCarPlayNightMode(context, CarPlayNightMode.SCHEDULE)
+        val appearance = get<CarPlayNightModeController>("nightMode")
+        runtime.start()
+        assertFalse(ReflectionHelpers.getField<Boolean>(appearance, "resumed"))
+        val current = listener()
+        val session = mock(AirPlaySession::class.java)
+        current.onSessionActive(session)
+        assertTrue(ReflectionHelpers.getField<Boolean>(appearance, "resumed"))
+        current.onSessionEnded(session)
+        assertFalse(ReflectionHelpers.getField<Boolean>(appearance, "resumed"))
+        runtime.refreshAppearance()
+        assertFalse(ReflectionHelpers.getField<Boolean>(appearance, "resumed"))
+    }
+
+    @Test fun expiredBootstrapSchedulesOneRetryAndBecomesEligibleForStandby() {
+        configureTestReceiver()
+        var reportStatus: ((CarPlayStatus) -> Unit)? = null
+        mockConstruction(CarPlayController::class.java) { _, construction ->
+            @Suppress("UNCHECKED_CAST")
+            val callback = construction.arguments()[7] as (CarPlayStatus) -> Unit
+            reportStatus = callback
+        }.use { construction ->
+            runtime.reconnect()
+            drainWorker()
+            assertEquals(1, construction.constructed().size)
+            requireNotNull(reportStatus)(CarPlayStatus.ControlEnded)
+            assertTrue(runtime.standbyReady)
+            val first = get<Runnable>("retry")
+            requireNotNull(reportStatus)(CarPlayStatus.ControlEnded)
+            assertSame(first, get<Runnable>("retry"))
+            assertEquals(1, get<WirelessStartupRetryBudget>("retryBudget").retries)
+            verify(construction.constructed().single(), never()).close()
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofSeconds(2))
+            drainWorker()
+            assertEquals(2, construction.constructed().size)
+            verify(construction.constructed().first()).close()
+            runtime.close()
+            drainWorker()
+        }
+    }
+
+    @Test fun endedBootstrapControlDoesNotRestartAnActiveWifiSession() {
+        configureTestReceiver()
+        var reportStatus: ((CarPlayStatus) -> Unit)? = null
+        mockConstruction(CarPlayController::class.java) { _, construction ->
+            @Suppress("UNCHECKED_CAST")
+            val callback = construction.arguments()[7] as (CarPlayStatus) -> Unit
+            reportStatus = callback
+        }.use { construction ->
+            runtime.reconnect()
+            drainWorker()
+            listener().onSessionActive(mock(AirPlaySession::class.java))
+            requireNotNull(reportStatus)(CarPlayStatus.ControlEnded)
+            assertTrue(runtime.sessionActive)
+            assertFalse(runtime.standbyReady)
+            assertNull(get<Runnable?>("retry"))
+            verify(construction.constructed().single(), never()).close()
+            runtime.close()
+            drainWorker()
+        }
     }
 
     @Test fun bluetoothOffWaitsWithoutPreparingControllersOrPausingRecovery() {
@@ -387,6 +643,42 @@ class BrowserCarPlayRuntimeTest {
         assertNull(get<Runnable?>("retry"))
     }
 
+    @Test fun persistentVideoFormatFailureUsesTheExistingAutomaticRetry() {
+        val failure: (Int, String) -> Unit = get("videoFailureListener")
+        val attempt: Int = get("generation")
+        failure(attempt, "unsupported_iphone_codec")
+        val retry = get<Runnable?>("retry")
+        assertNotNull(retry)
+        failure(attempt, "unsupported_iphone_codec")
+        assertSame(retry, get<Runnable?>("retry"))
+        assertFalse(runtime.setupNeedsAttention)
+        verify(controller, never()).close()
+    }
+
+    @Test fun videoFormatRecoveryIgnoresOldAttemptsAndUnknownReasons() {
+        val failure: (Int, String) -> Unit = get("videoFailureListener")
+        val attempt: Int = get("generation")
+        failure(attempt - 1, "unsupported_iphone_codec")
+        failure(attempt, "untrusted_external_reason")
+        assertNull(get<Runnable?>("retry"))
+        runtime.close()
+        failure(attempt, "video_config_rejected")
+        assertNull(get<Runnable?>("retry"))
+    }
+
+    @Test fun successfulVideoCancelsPendingFormatRecoveryWithoutRestartingTheSession() {
+        val current = listener()
+        val session = mock(AirPlaySession::class.java)
+        current.onSessionActive(session)
+        val failure: (Int, String) -> Unit = get("videoFailureListener")
+        failure(get("generation"), "video_config_rejected")
+        assertNotNull(get<Runnable?>("retry"))
+        current.onVideoFrameRendered(session)
+        assertNull(get<Runnable?>("retry"))
+        assertTrue(runtime.sessionActive)
+        verify(controller, never()).close()
+    }
+
     @Test fun explicitStopReportsOneTerminalStateWithoutMisclassifyingLateTransportCallbacks() {
         val telemetry = BrowserTelemetryEngine(context, online = { false })
         BrowserTelemetry.replaceEngineForTest(context, telemetry)
@@ -428,6 +720,32 @@ class BrowserCarPlayRuntimeTest {
         shadowOf(Looper.getMainLooper()).idle()
         worker.runAll()
         shadowOf(Looper.getMainLooper()).idle()
+    }
+
+    private fun configureTestReceiver() {
+        AirPlayPersistence.saveWirelessHotspotMode(context, WirelessHotspotMode.EXISTING_WIFI)
+        AirPlayPersistence.saveExistingWifiCredentials(context, "Test hotspot", "test-only-1234")
+        AirPlayPersistence.saveMfiTarget(context, MfiTarget.USB_CH341)
+    }
+
+    private fun assertIncompleteTeardownDefersStandby() {
+        configureTestReceiver()
+        listener().onTransportError("test interruption")
+        var completed = false
+        assertTrue(runtime.parkForStandby {
+            assertFalse(runtime.standbyParked)
+            completed = true
+        })
+        mockConstruction(CarPlayController::class.java).use { construction ->
+            drainWorker()
+            assertTrue(completed)
+            assertFalse(runtime.standbyParked)
+            assertEquals(1, construction.constructed().size)
+            verify(controller, times(1)).close()
+            verify(sink, times(1)).close()
+            runtime.close()
+            drainWorker()
+        }
     }
 
     private fun listener(): AirPlaySessionListener = ReflectionHelpers.callInstanceMethod(runtime, "listener",

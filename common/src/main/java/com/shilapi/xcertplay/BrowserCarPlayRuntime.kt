@@ -50,6 +50,8 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     @Volatile private var generation = 0
     private var preparing = false
     private var retiring = false
+    private var lastRetirementComplete = true
+    private var parked = false
     private var retry: Runnable? = null
     private var resize: Runnable? = null
     private var viewport = BrowserCarPlayViewport.load(this.context)
@@ -59,17 +61,24 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     private var activeSession: AirPlaySession? = null
     private var observerRegistered = false
     private val closeWaiters = mutableListOf<() -> Unit>()
+    private val retirementWaiters = mutableListOf<() -> Unit>()
     private var closeCompleted = false
     private var manualAttempt = false
     private var recoveryStartedAt = -1L
     var onStatusChanged: (() -> Unit)? = null
+    var onStandbyStateChanged: (() -> Unit)? = null
     var status: CarPlayStatus? = null
         private set
     var setupNeedsAttention = false
         private set
     val manualRecoveryPending: Boolean
         get() = requested && !closed && !preparing && !retiring && activeSession == null &&
+            (parked || setupNeedsAttention || retry != null)
+    val standbyReady: Boolean
+        get() = requested && !closed && !preparing && !retiring && activeSession == null &&
             (setupNeedsAttention || retry != null)
+    val sessionActive: Boolean get() = activeSession != null
+    val standbyParked: Boolean get() = parked
 
     private val nightMode = CarPlayNightModeController(
         AndroidAmbientLight(this.context), MainThreadNightModeScheduler(), systemNight(),
@@ -91,6 +100,12 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             }.also { main.postDelayed(it, 500) }
         }
     }
+    private val videoFailureListener: (Int, String) -> Unit = { attempt, reason -> onMain {
+        if (!closed && requested && generation == attempt && controller != null &&
+            reason in setOf("unsupported_iphone_codec", "video_config_rejected")) {
+            scheduleRetry(null, reason)
+        }
+    } }
 
     /** Metadata only: preserve the receiver's existing start/reconnect API and behaviour. */
     fun setTelemetryStartOrigin(automatic: Boolean) = onMain {
@@ -105,6 +120,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             record("receiver_requested")
             BrowserTelemetry.record(context, "receiver_start_requested", mapOf("automatic" to !manualAttempt))
             output.onViewport = viewportListener
+            output.onVideoFailure = videoFailureListener
             output.lastViewport?.let { viewport = BrowserCarPlayViewport.save(context, it.first, it.second) }
             context.registerComponentCallbacks(configurationObserver)
             observerRegistered = true
@@ -122,9 +138,43 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         manualAttempt = true
         BrowserTelemetry.record(context, "receiver_start_requested", mapOf("manualIntervention" to true, "source" to "connect_action"))
         setupNeedsAttention = false
+        parked = false
         configureNightMode()
         cancelRetry()
         restart()
+    }
+
+    /** Only the service decides when an idle receiver may relinquish its CPU lease. */
+    fun parkForStandby(completion: () -> Unit): Boolean {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        if (!standbyReady || parked) return false
+        parked = true
+        cancelRetry()
+        ++generation
+        record("receiver_standby_requested")
+        retire {
+            if (!lastRetirementComplete) {
+                parked = false
+                record("receiver_standby_deferred reason=teardown_pending")
+            } else record("receiver_standby_ready")
+            completion()
+            if (!closed && requested && !parked) maybeStart()
+        }
+        return true
+    }
+
+    /** Real arrival signals bypass idle backoff, without interrupting an active startup. */
+    fun resumeFromStandby() = onMain {
+        if (closed || !requested || activeSession != null) return@onMain
+        if (parked) {
+            parked = false
+            record("receiver_standby_resumed")
+            if (retiring || setupNeedsAttention) onStandbyStateChanged?.invoke()
+            else maybeStart()
+        } else if (retry != null && !setupNeedsAttention && !preparing && !retiring) {
+            cancelRetry()
+            restart()
+        }
     }
 
     fun close(reason: String = "receiver_closed", completion: () -> Unit = {}) = onMain {
@@ -133,11 +183,13 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         if (closed) return@onMain
         closed = true
         requested = false
+        parked = false
         ++generation
         cancelRetry()
         resize?.let(main::removeCallbacks)
         resize = null
         if (output.onViewport === viewportListener) output.onViewport = { _, _ -> }
+        if (output.onVideoFailure === videoFailureListener) output.onVideoFailure = { _, _ -> }
         if (observerRegistered) context.unregisterComponentCallbacks(configurationObserver)
         observerRegistered = false
         nightMode.pause()
@@ -161,7 +213,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     }
 
     private fun maybeStart() {
-        if (!requested || closed || preparing || retiring || controller != null || retry != null || setupNeedsAttention) return
+        if (!requested || closed || parked || preparing || retiring || controller != null || retry != null || setupNeedsAttention) return
         val mode = AirPlayPersistence.loadWirelessHotspotMode(context)
         if (WirelessPermissions.required(Build.VERSION.SDK_INT, mode).any {
                 context.checkSelfPermission(it) != PackageManager.PERMISSION_GRANTED
@@ -181,6 +233,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
         val automatic = !manualAttempt
         manualAttempt = false
         record("receiver_preparing generation=$attempt width=${size.first} height=${size.second}")
+        onStandbyStateChanged?.invoke()
         worker.execute {
             val result = runCatching {
                 val identity = AirPlayPersistence.loadIdentity(context)
@@ -205,6 +258,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
                         "reason" to "prepare_failed", "errorCode" to it.javaClass.simpleName))
                     setupNeedsAttention = true
                     setStatus(CarPlayStatus.Failed("Receiver setup needs attention. Open connection setup and reconnect."))
+                    onStandbyStateChanged?.invoke()
                 })
             }
         }
@@ -232,8 +286,11 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
                             if (incoming.wifiResetRequired || incoming.startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION) {
                                 setupNeedsAttention = true
                                 onStatusChanged?.invoke()
+                                onStandbyStateChanged?.invoke()
                             } else scheduleRetry(incoming.startupFailure, "startup_failure",
                                 incoming.message.contains("AirPlay iAP tunnel", ignoreCase = true))
+                        } else if (incoming == CarPlayStatus.ControlEnded && activeSession == null) {
+                            scheduleRetry(null, "control_ended")
                         }
                     }
                 } },
@@ -262,6 +319,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             BrowserTelemetry.record(context, "receiver_started", mapOf("attempt" to attempt, "width" to display.width,
                 "height" to display.height, "fpsRequested" to prepared.video.main.fps, "codec" to "h264"))
             next.start()
+            onStandbyStateChanged?.invoke()
         } catch (error: RuntimeException) {
             record("receiver_start_failed generation=$attempt class=${error.javaClass.simpleName}")
             BrowserTelemetry.record(context, "receiver_start_failed", mapOf("attempt" to attempt,
@@ -276,11 +334,13 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             if (closed || generation != attempt) return@onMain
             activeSession = session
             CarPlayBackgroundSession.active = true
+            configureNightMode()
             record("iphone_session_active generation=$attempt")
             BrowserTelemetry.record(context, "iphone_connected", mapOf("attempt" to attempt, "transport" to "wireless"))
             BrowserUpdates.check(context)
             sendNightMode(nightMode.night)
             onStatusChanged?.invoke()
+            onStandbyStateChanged?.invoke()
         }
 
         override fun onVideoFrameRendered(session: AirPlaySession) = onMain {
@@ -306,6 +366,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             if (closed || generation != attempt || (activeSession != null && activeSession !== session)) return@onMain
             activeSession = null
             CarPlayBackgroundSession.active = false
+            nightMode.pause()
             retryBudget.disconnected()
             record("iphone_session_ended generation=$attempt")
             BrowserTelemetry.record(context, "iphone_disconnected", mapOf("attempt" to attempt, "reason" to "session_ended"))
@@ -331,7 +392,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     }
 
     private fun scheduleRetry(failure: WirelessStartupFailure?, reason: String, tunnel: Boolean = false) {
-        if (closed || !requested || setupNeedsAttention || retry != null) return
+        if (closed || !requested || parked || setupNeedsAttention || retry != null) return
         val delay = if (tunnel) 15_000L else retryBudget.nextDelayMillis(continuous = true) ?: return
         val attempt = generation
         record("iphone_retry_scheduled generation=$attempt delayMs=$delay reason=$reason startupFailure=${failure ?: "none"}")
@@ -342,6 +403,7 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
             retry = null
             if (!closed && requested && generation == attempt) restart()
         }.also { main.postDelayed(it, delay) }
+        onStandbyStateChanged?.invoke()
     }
 
     private fun cancelRetry() { retry?.let(main::removeCallbacks); retry = null }
@@ -355,24 +417,30 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     }
 
     private fun retire(completion: () -> Unit) {
+        retirementWaiters += completion
+        if (retiring) return
         val oldController = controller
         val oldSink = sink
         controller = null
         sink = null
         layout = null
         activeSession = null
+        nightMode.pause()
         if (CarPlayBackgroundSession.isOwner(this)) CarPlayBackgroundSession.clear(oldController, keepOwner = !closed)
         if (oldController != null || oldSink != null) output.onScreenStreamActive(110, false)
         retiring = true
+        onStandbyStateChanged?.invoke()
         worker.execute {
             oldController?.close()
             val complete = oldController?.awaitClosed(4_000) ?: true
             oldSink?.close()
-            oldSink?.awaitVideoReleased(2_000)
-            record("receiver_teardown complete=$complete")
+            val videoReleased = oldSink?.awaitVideoReleased(2_000) ?: true
+            record("receiver_teardown complete=$complete videoReleased=$videoReleased")
             main.post {
+                lastRetirementComplete = complete && videoReleased
                 retiring = false
-                completion()
+                retirementWaiters.toList().also { retirementWaiters.clear() }.forEach { it() }
+                onStandbyStateChanged?.invoke()
             }
         }
     }
@@ -387,10 +455,11 @@ internal class BrowserCarPlayRuntime(context: Context, private val output: Brows
     }
 
     private fun configureNightMode() {
+        if (activeSession == null) nightMode.pause()
         nightMode.configure(AirPlayPersistence.loadCarPlayNightMode(context), systemNight(),
             AirPlayPersistence.loadAmbientLightThreshold(context), AirPlayPersistence.loadAmbientDelaySeconds(context),
             AirPlayPersistence.loadCarPlayNightSchedule(context))
-        nightMode.resume(systemNight())
+        if (activeSession != null) nightMode.resume(systemNight())
     }
 
     private fun systemNight() = context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES

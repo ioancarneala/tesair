@@ -20,6 +20,14 @@
     return { type: 'display', width: Math.max(1, Math.round(width * scale)),
       height: Math.max(1, Math.round(height * scale)), dpr };
   }
+  function renderViewport(width, height, dpr, sourceWidth, sourceHeight) {
+    if (![width, height, dpr, sourceWidth, sourceHeight].every(Number.isFinite)
+        || width <= 0 || height <= 0 || dpr <= 0 || sourceWidth <= 0 || sourceHeight <= 0) return null;
+    const scale = Math.min(Math.max(1, Math.min(2, dpr)), 4096 / Math.max(width, height),
+      Math.sqrt(8388608 / (width * height)));
+    return {width: Math.max(1, Math.min(sourceWidth, Math.round(width * scale))),
+      height: Math.max(1, Math.min(sourceHeight, Math.round(height * scale)))};
+  }
   function parsePacket(buffer) {
     if (!(buffer instanceof ArrayBuffer) || buffer.byteLength <= 9) throw new Error('Invalid video packet');
     const view = new DataView(buffer);
@@ -29,13 +37,13 @@
     return { type: view.getUint8(0) ? 'key' : 'delta', timestamp, data: new Uint8Array(buffer, 9) };
   }
   function retryDelay(attempt) { return Math.min(10000, 500 * Math.pow(2, Math.max(0, Math.min(5, attempt - 1)))); }
-  if (typeof module !== 'undefined') module.exports = { pointInVideo, parseViewArea, displayViewport, parsePacket, retryDelay };
+  if (typeof module !== 'undefined') module.exports = { pointInVideo, parseViewArea, displayViewport, renderViewport, parsePacket, retryDelay };
   if (!root.document) return;
   const $ = id => document.getElementById(id);
   const canvas = $('screen'), context = canvas.getContext('2d', { alpha: false, desynchronized: true });
   let socket, decoder, config, needKey = true, reconnectTimer, reconnectCount = 0, connected = false;
-  let lastFrame = 0, lastPacket = 0, lastServerMessage = 0, recoveryAt = 0;
-  let displayTimer, lastDisplay = '', decodeError = '';
+  let lastFrame = 0, lastPacket = 0, lastServerMessage = 0, recoveryAt = -Infinity;
+  let displayTimer, keyframeTimer, lastDisplay = '', decodeError = '';
   let sessionRequest, connectionAttempt = 0, socketTimer, leaving = false;
   let receivedVideo = false, recoveryRequested = false, unsupportedVideo = false;
   let reportedPlaybackProblem = false;
@@ -43,7 +51,9 @@
   let waitingForVideo = false, pendingDiagnostic = null;
   let viewArea = null, pendingViewArea = null;
   const frameArrivals = new Map();
-  let timingSamples = 0, decodeTotal = 0, decodeMax = 0, drawTotal = 0, drawMax = 0, timingReportedAt = 0;
+  const MAX_PENDING_FRAMES = 12, MAX_PENDING_BYTES = 8 * 1024 * 1024, MAX_PENDING_AGE_MS = 150, STARTUP_DECODE_AGE_MS = 1000;
+  let decoderHasOutput = false, decodeTimer = null, pendingEncodedBytes = 0, pendingFrame = null, renderHandle = null, renderEpoch = 0, renderSizeDirty = true;
+  let timingSamples = 0, timingDecodeSamples = 0, decodeTotal = 0, decodeMax = 0, drawTotal = 0, drawMax = 0, timingReportedAt = 0;
   let metricReceived = 0, metricDecoded = 0, metricDrawn = 0, metricDropped = 0, metricStartedAt = 0, metricQueueMax = 0;
   let metricDecodeTotal = 0, metricDecodeMax = 0, metricDecodeSamples = 0, requestedFps = 0;
   function telemetry(name, attributes = {}) {
@@ -71,8 +81,9 @@
     else if (event === 'page_exit') telemetry('browser_disconnected', {reason: 'page_exit', result: 'normal'});
   }
   function resetVideoTiming() {
-    frameArrivals.clear();
-    timingSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
+    clearTimeout(decodeTimer); decodeTimer = null;
+    frameArrivals.clear(); pendingEncodedBytes = 0;
+    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
     timingReportedAt = performance.now();
   }
   function reportPerformance(now, reason = 'interval') {
@@ -90,10 +101,10 @@
   }
   function reportVideoTiming(now) {
     if (!timingSamples || now - timingReportedAt < 5000) return;
-    diagnostic('latency', 0, {samples: timingSamples, decodeAvgUs: Math.round(decodeTotal * 1000 / timingSamples),
+    diagnostic('latency', 0, {samples: timingSamples, decodeAvgUs: Math.round(decodeTotal * 1000 / Math.max(1, timingDecodeSamples)),
       decodeMaxUs: Math.round(decodeMax * 1000), drawAvgUs: Math.round(drawTotal * 1000 / timingSamples),
       drawMaxUs: Math.round(drawMax * 1000)});
-    timingSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
+    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
     timingReportedAt = now;
     if (now - metricStartedAt >= 30000) reportPerformance(now);
   }
@@ -112,7 +123,7 @@
     const signature = JSON.stringify(display);
     if (signature !== lastDisplay) { send(display); lastDisplay = signature; }
   }
-  function scheduleDisplay() { clearGesture(); clearTimeout(displayTimer); displayTimer = setTimeout(displaySize, 200); }
+  function scheduleDisplay() { renderSizeDirty = true; clearGesture(); clearTimeout(displayTimer); displayTimer = setTimeout(displaySize, 200); }
   function decoderFailure(error) {
     diagnostic(error && error.name === 'NotSupportedError' ? 'decoder_unsupported' : 'decoder_error');
     if (error && error.name === 'NotSupportedError') {
@@ -124,15 +135,90 @@
     decodeError = 'This browser could not decode the video. The connection will restart automatically.';
     reconnect(decodeError);
   }
+  function discardPresentation() {
+    renderEpoch++;
+    if (renderHandle != null) {
+      if (typeof root.cancelAnimationFrame === 'function') root.cancelAnimationFrame(renderHandle);
+      else clearTimeout(renderHandle);
+      renderHandle = null;
+    }
+    if (pendingFrame) { pendingFrame.frame.close(); pendingFrame = null; metricDropped++; }
+  }
+  function presentFrame(epoch) {
+    if (epoch !== renderEpoch) return;
+    renderHandle = null;
+    const pending = pendingFrame; pendingFrame = null;
+    if (!pending) return;
+    const frame = pending.frame;
+    try {
+      if (document.hidden || pending.decoder !== decoder || decoder.state !== 'configured') return;
+      const area = sourceArea();
+      if (renderSizeDirty) {
+        const bounds = $('stage').getBoundingClientRect();
+        const size = renderViewport(bounds.width, bounds.height, root.devicePixelRatio || 1, area.width, area.height);
+        if (size) {
+          // Resize only immediately before a draw: changing either attribute clears the canvas.
+          if (canvas.width !== size.width) canvas.width = size.width;
+          if (canvas.height !== size.height) canvas.height = size.height;
+          renderSizeDirty = false;
+        }
+      }
+      const drawAt = performance.now();
+      context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
+      const drawMs = Math.max(0, performance.now() - drawAt);
+      clearTimeout(keyframeTimer); keyframeTimer = null;
+      metricDrawn++; timingSamples++; drawTotal += drawMs; drawMax = Math.max(drawMax, drawMs);
+      if (!receivedVideo || reportedPlaybackProblem || reportNextDraw) telemetry('browser_first_frame', {
+        ...videoContext(), source: reportedPlaybackProblem ? 'recovery' : 'first_draw', sampleDecoded: true,
+        width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
+      reportedPlaybackProblem = reportNextDraw = false;
+      // ACK is cumulative: drawing the newest frame also releases superseded frame credits.
+      // It confirms submission, never physical display presentation or merely successful decoding.
+      send({type: 'ack', pts: frame.timestamp});
+      if (waitingForVideo) diagnostic('video_resumed');
+      waitingForVideo = false;
+      lastFrame = performance.now(); receivedVideo = true; recoveryRequested = false;
+      canvas.hidden = false; $('panel').hidden = true; document.body.classList.add('playing'); reconnectCount = 0; decodeError = '';
+    } catch (error) { decoderFailure(error); }
+    finally { frame.close(); }
+  }
+  function queuePresentation(frame, next) {
+    if (pendingFrame) { pendingFrame.frame.close(); metricDropped++; }
+    pendingFrame = {frame, decoder: next};
+    if (renderHandle != null) return;
+    const epoch = renderEpoch;
+    if (typeof root.requestAnimationFrame !== 'function') { presentFrame(epoch); return; }
+    renderHandle = root.requestAnimationFrame(() => presentFrame(epoch));
+  }
+  function watchDecodeProgress() {
+    clearTimeout(decodeTimer); decodeTimer = null;
+    const oldest = frameArrivals.values().next().value;
+    if (!oldest || document.hidden) return;
+    const epoch = renderEpoch, deadline = decoderHasOutput ? MAX_PENDING_AGE_MS : STARTUP_DECODE_AGE_MS;
+    decodeTimer = setTimeout(() => {
+      decodeTimer = null;
+      if (epoch !== renderEpoch || !connected || document.hidden || !decoder) return;
+      const pending = frameArrivals.values().next().value;
+      if (pending && performance.now() - pending.at >= deadline) {
+        metricDropped++; diagnostic('decode_backpressure'); recover();
+      } else watchDecodeProgress();
+    }, Math.max(1, Math.ceil(deadline - (performance.now() - oldest.at))));
+  }
   function recover() {
     needKey = true;
+    discardPresentation(); resetVideoTiming(); decoderHasOutput = false;
     const now = performance.now();
-    if (now - recoveryAt < 500) return;
-    recoveryAt = now;
-    resetVideoTiming();
     try { if (decoder && decoder.state !== 'closed') { decoder.reset(); if (config) decoder.configure(config); } }
     catch (error) { decoderFailure(error); return; }
-    send({ type: 'keyframe' });
+    clearTimeout(keyframeTimer);
+    const remaining = 500 - (now - recoveryAt), epoch = renderEpoch;
+    const requestKeyframe = () => {
+      keyframeTimer = null;
+      if (epoch !== renderEpoch || !connected || document.hidden || !socket || socket.readyState !== WebSocket.OPEN) return;
+      recoveryAt = performance.now(); send({type: 'keyframe'});
+    };
+    if (remaining > 0) keyframeTimer = setTimeout(requestKeyframe, remaining);
+    else requestKeyframe();
   }
   function createDecoder(format) {
     clearGesture();
@@ -140,7 +226,7 @@
     if (!Number.isInteger(format.width) || !Number.isInteger(format.height)
         || format.width <= 0 || format.height <= 0 || format.width > 8192 || format.height > 8192
         || typeof format.codec !== 'string') throw new Error('Invalid video format');
-    canvas.width = format.width; canvas.height = format.height;
+    renderSizeDirty = true; decoderHasOutput = false;
     requestedFps = Number.isFinite(format.fpsRequested) ? format.fpsRequested : 0;
     config = { codec: format.codec, codedWidth: format.width, codedHeight: format.height,
       // Let the browser use its available hardware decoder or fall back to software.
@@ -149,32 +235,20 @@
     applyViewArea();
     const next = new VideoDecoder({
       output(frame) {
-        if (decoder !== next) { frame.close(); return; }
-        const area = sourceArea();
-        const receivedAt = frameArrivals.get(frame.timestamp), outputAt = performance.now();
-        metricDecoded++;
-        frameArrivals.delete(frame.timestamp);
-        try {
-          context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
-          metricDrawn++;
-          if (!receivedVideo || reportedPlaybackProblem || reportNextDraw) telemetry('browser_first_frame', {
-            ...videoContext(), source: reportedPlaybackProblem ? 'recovery' : 'first_draw', sampleDecoded: true,
-            width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
-          reportedPlaybackProblem = reportNextDraw = false;
-          // Decode includes browser queueing; draw measures submission, not physical presentation.
-          if (receivedAt !== undefined && timingSamples < 10000) {
-            const decodeMs = Math.max(0, outputAt - receivedAt), drawMs = Math.max(0, performance.now() - outputAt);
-            timingSamples++; decodeTotal += decodeMs; drawTotal += drawMs;
-            decodeMax = Math.max(decodeMax, decodeMs); drawMax = Math.max(drawMax, drawMs);
-            metricDecodeTotal += decodeMs; metricDecodeMax = Math.max(metricDecodeMax, decodeMs); metricDecodeSamples++;
-          }
-          send({ type: 'ack', pts: frame.timestamp });
+        const arrival = frameArrivals.get(frame.timestamp);
+        if (decoder !== next || !arrival || document.hidden) { frame.close(); return; }
+        const outputAt = performance.now(), decodeMs = Math.max(0, outputAt - arrival.at);
+        // The stream uses monotonic, cumulative ACK timestamps. Later output retires older decode bookkeeping too.
+        for (const [pts, pending] of frameArrivals) if (pts <= frame.timestamp) {
+          frameArrivals.delete(pts); pendingEncodedBytes -= pending.bytes;
         }
-        finally { frame.close(); }
-        if (waitingForVideo) diagnostic('video_resumed');
-        waitingForVideo = false;
-        lastFrame = performance.now(); receivedVideo = true; recoveryRequested = false;
-        canvas.hidden = false; $('panel').hidden = true; document.body.classList.add('playing'); reconnectCount = 0; decodeError = '';
+        decoderHasOutput = true; watchDecodeProgress();
+        metricDecoded++;
+        metricDecodeTotal += decodeMs; metricDecodeMax = Math.max(metricDecodeMax, decodeMs); metricDecodeSamples++;
+        if (timingDecodeSamples < 10000) {
+          timingDecodeSamples++; decodeTotal += decodeMs; decodeMax = Math.max(decodeMax, decodeMs);
+        }
+        queuePresentation(frame, next);
       },
       error(error) { if (decoder === next) decoderFailure(error); }
     });
@@ -199,11 +273,12 @@
     if (!config || !pendingViewArea || pendingViewArea.canvasWidth !== config.codedWidth
         || pendingViewArea.canvasHeight !== config.codedHeight) return;
     if (JSON.stringify(viewArea) !== JSON.stringify(pendingViewArea)) clearGesture();
-    viewArea = pendingViewArea;
+    viewArea = pendingViewArea; renderSizeDirty = true;
     pendingViewArea = null;
   }
   function closeDecoder() {
-    resetVideoTiming();
+    clearTimeout(keyframeTimer); keyframeTimer = null;
+    discardPresentation(); resetVideoTiming();
     const previous = decoder; decoder = null; config = null;
     if (previous && previous.state !== 'closed') previous.close();
   }
@@ -312,13 +387,22 @@
           metricReceived++;
           lastPacket = performance.now();
           if (!decoder || decoder.state !== 'configured') return;
-          metricQueueMax = Math.max(metricQueueMax, decoder.decodeQueueSize || 0);
-          if (decoder.decodeQueueSize > 3) { metricDropped++; diagnostic('decode_backpressure'); recover(); return; }
+          if (document.hidden) { metricDropped++; return; }
           if (needKey && packet.type !== 'key') { metricDropped++; return; }
+          if (frameArrivals.has(packet.timestamp)) { metricDropped++; return; }
+          const now = performance.now(), oldest = frameArrivals.values().next().value;
+          metricQueueMax = Math.max(metricQueueMax, decoder.decodeQueueSize || 0, frameArrivals.size);
+          // Decode reference frames through short network bursts; reset only bounded, genuinely stale work.
+          if (decoder.decodeQueueSize >= MAX_PENDING_FRAMES || frameArrivals.size >= MAX_PENDING_FRAMES
+              || pendingEncodedBytes + packet.data.byteLength > MAX_PENDING_BYTES
+              || (oldest && now - oldest.at >= (decoderHasOutput ? MAX_PENDING_AGE_MS : STARTUP_DECODE_AGE_MS))) {
+            metricDropped++; diagnostic('decode_backpressure'); recover(); return;
+          }
           if (packet.type === 'key') needKey = false;
-          if (frameArrivals.size >= 16) frameArrivals.delete(frameArrivals.keys().next().value);
-          frameArrivals.set(packet.timestamp, performance.now());
+          frameArrivals.set(packet.timestamp, {at: now, bytes: packet.data.byteLength});
+          pendingEncodedBytes += packet.data.byteLength;
           decoder.decode(new EncodedVideoChunk(packet));
+          watchDecodeProgress();
         } catch (error) {
           if (error.name === 'NotSupportedError') decoderFailure(error);
           else { diagnostic('packet_error'); status('Video interrupted · recovering'); recover(); }
@@ -414,6 +498,10 @@
   document.addEventListener('visibilitychange', () => {
     clearGesture();
     diagnostic(document.hidden ? 'page_hidden' : 'page_visible');
+    if (document.hidden) {
+      clearTimeout(keyframeTimer); keyframeTimer = null;
+      discardPresentation(); resetVideoTiming(); needKey = true;
+    }
     if (!document.hidden) {
       try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
       if (connected) {

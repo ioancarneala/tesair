@@ -6,14 +6,27 @@ Your iPhone apps on the Tesla screen, with sharp video, responsive touch and sou
 through the car's speakers. Install TesAir on Android and open **go.tesair.co** in
 the Tesla browser.
 
-[**Download TesAir v1.0.5**](https://github.com/ioancarneala/tesair/releases/download/v1.0.5/TesAir-v1.0.5.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
+[**Download TesAir v1.0.6**](https://github.com/ioancarneala/tesair/releases/download/v1.0.6/TesAir-v1.0.6.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
 
 Clear first-time setup, an illustrated iPhone pairing guide and updates you can
-download from the app. **New in v1.0.5:** more accurate optional connection reports.
+download from the app. **New in v1.0.6:** smoother video, lower standby power use
+and automatic recovery from video format problems.
 
 Used daily in a **Tesla Model 3 Highland (HW4)**, with smooth **60 fps** video and
 a stable connection. Tested Android phones: **OnePlus 7T Pro**
 and **Xiaomi 12X**.
+
+## What's new in v1.0.6
+
+- **More responsive video and touch.** Bounded video queues and browser drawing
+  keep old frames from building up, while retaining picture quality.
+- **Lower standby power use.** The receiver rests when the phone is unplugged,
+  its screen is off and no iPhone or browser is connected. Power return, browser
+  activity and Bluetooth arrival resume the receiver automatically.
+- **Automatic video recovery.** Temporary format changes can settle without
+  restarting CarPlay; persistent format errors trigger automatic reconnection.
+- **Clearer connection diagnostics.** Optional reports include video format and
+  HTTPS identity status to help identify connection and certificate problems.
 
 ## Why TesAir
 
@@ -57,7 +70,7 @@ AMD Ryzen infotainment.
 The short address opens the phone's local HTTPS connection at
 `carplay.tesair.co:8443`.
 
-To upgrade from v1.0.3, install the APK above over your existing TesAir app.
+To update, install the APK above over your existing TesAir app.
 Your settings stay saved. For future releases, see what's new and download the
 update in **Settings → App updates**, then confirm installation in Android.
 Turn on **Notify me about updates** there to receive release alerts.

@@ -43,6 +43,34 @@ what you tested in your pull request. Never commit credentials, build outputs or
 device reports. The source guard checks tracked and untracked files; generated
 build directories are excluded unless tracked.
 
+## Standby verification
+
+After two minutes on battery with the screen off and no iPhone session or browser,
+the receiver parks between connection attempts and releases its CPU and Wi-Fi locks.
+The foreground service, local HTTPS server and hotspot remain available. Power
+return, screen activation, a browser or selected-phone Bluetooth connection resumes
+the receiver. An inexact wake alarm provides occasional fallback probes; Android
+can delay these, so arrival without external power may reconnect later.
+
+Before shipping changes to this policy, test a locked phone on battery, verify
+the app wake locks are released, and restore power without touching the phone.
+Confirm automatic CarPlay recovery, browser wake, and that Disconnect cancels
+future probes. Restore any simulated battery/Doze state after ADB tests.
+
+## Video and HTTPS recovery
+
+Video configuration records are validated before selecting AVC or HEVC. Invalid records
+close the screen transport for automatic recovery. A supported H.264 configuration may
+replace a temporary unsupported configuration within three seconds; persistent format
+failures use the normal receiver retry policy without requiring a manual reconnect.
+
+Automatic diagnostic reports include public HTTPS identity validity and sync outcomes.
+Opted-in telemetry reports the same state using existing diagnostic events, without
+private keys, certificate contents, or download credentials. A failed renewal keeps the
+working identity. On Android distributions such as Tesla Android, check system time,
+internet availability for renewal, and Keystore outcomes before attributing TLS errors
+to the hardware.
+
 ## Release build
 
 Release application ID: `co.tesair.app`. The version and version code are defined in

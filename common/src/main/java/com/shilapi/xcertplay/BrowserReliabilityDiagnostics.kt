@@ -18,6 +18,8 @@ import java.io.File
 import java.net.NetworkInterface
 import java.util.Collections
 import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledExecutorService
+import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -85,6 +87,7 @@ internal object BrowserReliabilityDiagnostics {
     fun telemetrySample(context: Context) {
         if (!BrowserTelemetry.enabled(context)) return
         val output = DiPlaySessionService.currentBrowserOutput()
+        output?.recordTlsDiagnostics()
         val active = CarPlayBackgroundSession.active || (output?.clientCount ?: 0) > 0
         runCatching {
             val power = context.getSystemService(PowerManager::class.java)
@@ -115,19 +118,40 @@ internal object BrowserReliabilityDiagnostics {
     }
 }
 
-/** Foreground-session diagnostics once/minute, plus lightweight pending screen-off verification. */
-internal class BrowserReliabilityMonitor(context: Context) : Closeable {
+/** Full reports slow down in standby; screen-off verification only runs during an actual stream. */
+internal class BrowserReliabilityMonitor(
+    context: Context,
+    private val worker: ScheduledExecutorService = Executors.newSingleThreadScheduledExecutor { job ->
+        Thread(job, "diplay-health").apply { isDaemon = true }
+    },
+    private val elapsed: () -> Long = SystemClock::elapsedRealtime,
+    private val activity: () -> Activity = {
+        Activity(CarPlayBackgroundSession.active, (DiPlaySessionService.currentBrowserOutput()?.clientCount ?: 0) > 0)
+    },
+    private val report: (Context) -> Unit = { app ->
+        BrowserReliabilityDiagnostics.record(app, BrowserReliabilityDiagnostics.snapshot(app))
+        BrowserAutomaticReport.save(app)
+    },
+    private val pollScreenOff: (Context) -> Unit = BrowserScreenOffCheck::poll,
+    private val stopScreenOff: () -> Unit = BrowserScreenOffCheck::stop,
+) : Closeable {
+    internal data class Activity(val iphone: Boolean, val browser: Boolean) {
+        val active: Boolean get() = iphone || browser
+        val streaming: Boolean get() = iphone && browser
+    }
+
     private val app = context.applicationContext
     private val closed = AtomicBoolean()
-    private val worker = Executors.newSingleThreadScheduledExecutor { job ->
-        Thread(job, "diplay-health").apply { isDaemon = true }
-    }
+    private var scheduled: ScheduledFuture<*>? = null
+    private var scheduleGeneration = 0L
+    private var lastReportAt = -1L
+    private var lastActivity: Activity? = null
     private val connectivity = app.getSystemService(ConnectivityManager::class.java)
     private val callback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) = event("uplink_available")
         override fun onLost(network: Network) = event("uplink_lost")
         override fun onCapabilitiesChanged(network: Network, capabilities: NetworkCapabilities) {
-            if (capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) BrowserTelemetry.pump(app)
+            if (!closed.get() && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED)) BrowserTelemetry.pump(app)
         }
     }
     private val receiver = object : BroadcastReceiver() {
@@ -159,16 +183,48 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
             else app.registerReceiver(receiver, filter)
             true
         }.getOrDefault(false)
-        worker.scheduleWithFixedDelay({
-            if (!closed.get()) {
-                BrowserReliabilityDiagnostics.record(app, BrowserReliabilityDiagnostics.snapshot(app))
-                BrowserAutomaticReport.save(app)
-                sampleTelemetry()
+        activityChanged()
+    }
+
+    /** Connection callbacks promote diagnostics immediately without introducing a wake-up alarm. */
+    fun activityChanged() = synchronized(closed) {
+        if (!closed.get()) scheduleLocked(0)
+    }
+
+    /** Caller holds the close fence, so teardown cannot race a new scheduled task. */
+    private fun scheduleLocked(delay: Long) {
+        scheduled?.cancel(false)
+        val generation = ++scheduleGeneration
+        scheduled = worker.schedule({ tick(generation) }, delay, TimeUnit.MILLISECONDS)
+    }
+
+    private fun tick(generation: Long) {
+        synchronized(closed) {
+            if (closed.get() || generation != scheduleGeneration) return
+            scheduled = null
+        }
+        val current = activity()
+        val now = elapsed()
+        val interval = if (current.active) ACTIVE_REPORT_MILLIS else IDLE_REPORT_MILLIS
+        val reportDue = synchronized(closed) {
+            if (closed.get() || generation != scheduleGeneration) return
+            (lastActivity != current || lastReportAt < 0 || now - lastReportAt >= interval).also { due ->
+                lastActivity = current
+                if (due) lastReportAt = now
             }
-        }, 0, 60, TimeUnit.SECONDS)
-        worker.scheduleWithFixedDelay({
-            if (!closed.get()) runCatching { BrowserScreenOffCheck.poll(app) }
-        }, 0, 2, TimeUnit.SECONDS)
+        }
+        if (reportDue) {
+            runCatching { report(app) }
+            sampleTelemetry()
+        }
+        synchronized(closed) {
+            if (closed.get() || generation != scheduleGeneration) return
+            // A late poll must not restart the proof after close() reset it.
+            runCatching { if (current.streaming) pollScreenOff(app) else stopScreenOff() }
+            val reportRemaining = (interval - (elapsed() - lastReportAt)).coerceAtLeast(0)
+            val checkDelay = if (current.streaming) SCREEN_OFF_POLL_MILLIS else HEALTH_CHECK_MILLIS
+            scheduleLocked(minOf(checkDelay, reportRemaining))
+        }
     }
 
     private fun event(event: String) {
@@ -182,12 +238,24 @@ internal class BrowserReliabilityMonitor(context: Context) : Closeable {
     }
 
     override fun close() {
-        synchronized(closed) { if (!closed.compareAndSet(false, true)) return }
-        BrowserScreenOffCheck.stop()
+        synchronized(closed) {
+            if (!closed.compareAndSet(false, true)) return
+            ++scheduleGeneration
+            scheduled?.cancel(false)
+            scheduled = null
+            stopScreenOff()
+            // Queue the final private snapshot before shutdown, never after a racing tick.
+            worker.execute { BrowserAutomaticReport.save(app) }
+            worker.shutdown()
+        }
         if (callbackRegistered) runCatching { connectivity?.unregisterNetworkCallback(callback) }
         if (receiverRegistered) runCatching { app.unregisterReceiver(receiver) }
-        // Finish one private snapshot without making service teardown wait for disk.
-        worker.execute { BrowserAutomaticReport.save(app) }
-        worker.shutdown()
+    }
+
+    companion object {
+        private const val ACTIVE_REPORT_MILLIS = 60_000L
+        private const val IDLE_REPORT_MILLIS = 15 * 60_000L
+        private const val HEALTH_CHECK_MILLIS = 60_000L
+        private const val SCREEN_OFF_POLL_MILLIS = 2_000L
     }
 }

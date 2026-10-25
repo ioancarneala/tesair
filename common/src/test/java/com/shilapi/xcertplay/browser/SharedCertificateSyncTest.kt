@@ -113,8 +113,87 @@ class SharedCertificateSyncTest {
         val sync = client(identity) { SharedCertificateSync.Response(401, "") }
         assertEquals(60_000, sync.syncOnce())
         assertEquals(SharedCertificateSync.State.ERROR, sync.state)
+        assertEquals(SharedCertificateSync.Reason.HTTP_UNAUTHORIZED, sync.diagnostics.reason)
         assertTrue(identity.trusted())
         assertEquals(0, identity.installed)
+    }
+
+    @Test fun diagnosticsClassifyHttpFailuresWithoutRemovingAWorkingIdentity() {
+        for ((code, reason) in mapOf(401 to SharedCertificateSync.Reason.HTTP_UNAUTHORIZED,
+            403 to SharedCertificateSync.Reason.HTTP_FORBIDDEN, 429 to SharedCertificateSync.Reason.HTTP_RATE_LIMITED,
+            503 to SharedCertificateSync.Reason.HTTP_SERVER_ERROR, 302 to SharedCertificateSync.Reason.HTTP_UNEXPECTED)) {
+            val identity = FakeIdentity(true)
+            val sync = client(identity) { SharedCertificateSync.Response(code, "private-response-must-not-be-reported") }
+            sync.syncOnce()
+            assertEquals(reason, sync.diagnostics.reason)
+            assertTrue(identity.trusted())
+            assertFalse(sync.diagnostics.toString().contains("private-response"))
+        }
+    }
+
+    @Test fun diagnosticsDistinguishDownloadBundleAndKeystoreFailuresWithoutExceptionMessages() {
+        val cases = listOf(
+            Triple(SocketTimeoutException("private-network-details"), SharedCertificateSync.Stage.DOWNLOAD,
+                SharedCertificateSync.Reason.NETWORK_TIMEOUT),
+            Triple(java.net.UnknownHostException("private-network-details"), SharedCertificateSync.Stage.DOWNLOAD,
+                SharedCertificateSync.Reason.NETWORK_UNAVAILABLE),
+            Triple(javax.net.ssl.SSLHandshakeException("private-certificate-details"), SharedCertificateSync.Stage.DOWNLOAD,
+                SharedCertificateSync.Reason.DOWNLOAD_TLS_FAILED),
+            Triple(IOException("private-response-details"), SharedCertificateSync.Stage.DOWNLOAD,
+                SharedCertificateSync.Reason.DOWNLOAD_FAILED),
+            Triple(IllegalArgumentException("private-bundle-details"), SharedCertificateSync.Stage.BUNDLE,
+                SharedCertificateSync.Reason.INVALID_BUNDLE),
+            Triple(java.security.KeyStoreException("private-key-details"), SharedCertificateSync.Stage.INSTALL,
+                SharedCertificateSync.Reason.KEYSTORE_FAILED),
+            Triple(java.security.cert.CertificateExpiredException("private-certificate-details"), SharedCertificateSync.Stage.INSTALL,
+                SharedCertificateSync.Reason.IDENTITY_EXPIRED),
+            Triple(java.security.cert.CertificateNotYetValidException("private-certificate-details"), SharedCertificateSync.Stage.INSTALL,
+                SharedCertificateSync.Reason.CLOCK_BEFORE_VALIDITY),
+            Triple(CertificateException("private-chain-details"), SharedCertificateSync.Stage.INSTALL,
+                SharedCertificateSync.Reason.IDENTITY_INVALID),
+            Triple(IOException("private-storage-details"), SharedCertificateSync.Stage.INSTALL,
+                SharedCertificateSync.Reason.INSTALL_FAILED),
+            Triple(IllegalStateException("private-identity-details"), SharedCertificateSync.Stage.VERIFY,
+                SharedCertificateSync.Reason.IDENTITY_UNAVAILABLE),
+        )
+        for ((error, stage, expected) in cases) {
+            assertEquals(expected, SharedCertificateSync.failureReason(error, stage))
+        }
+        val wrapped = IllegalStateException("private-wrapper", java.security.cert.CertificateNotYetValidException("private-time"))
+        assertEquals(SharedCertificateSync.Reason.CLOCK_BEFORE_VALIDITY,
+            SharedCertificateSync.failureReason(wrapped, SharedCertificateSync.Stage.INSTALL))
+    }
+
+    @Test fun rejectedBundleAndInstallationFailurePublishTheCorrectFinalOutcome() {
+        val malformed = client(FakeIdentity(false)) { SharedCertificateSync.Response(200, "private-invalid-json") }
+        malformed.syncOnce()
+        assertEquals(SharedCertificateSync.Reason.INVALID_BUNDLE, malformed.diagnostics.reason)
+        val identity = FakeIdentity(true).apply { failure = java.security.KeyStoreException("private-keystore-details") }
+        val sync = client(identity) { SharedCertificateSync.Response(200, bundle(2)) }
+        sync.syncOnce()
+        assertEquals(SharedCertificateSync.Diagnostics(SharedCertificateSync.State.RETRYING,
+            SharedCertificateSync.Reason.KEYSTORE_FAILED), sync.diagnostics)
+        assertTrue(identity.trusted())
+        identity.failure = null
+        sync.syncOnce()
+        assertEquals(SharedCertificateSync.Diagnostics(SharedCertificateSync.State.CURRENT,
+            SharedCertificateSync.Reason.CURRENT), sync.diagnostics)
+    }
+
+    @Test fun diagnosticSnapshotsAreAtomicAndUnchangedPublicationsAreDeduplicated() {
+        val observed = mutableListOf<SharedCertificateSync.Diagnostics>()
+        lateinit var sync: SharedCertificateSync
+        sync = client(FakeIdentity(true), "https://unapproved.example/v1/bundle",
+            changed = { observed += sync.diagnostics }) { throw AssertionError("Invalid configuration must not fetch") }
+        sync.start()
+        sync.syncOnce()
+        assertEquals(listOf(SharedCertificateSync.Diagnostics(SharedCertificateSync.State.ERROR,
+            SharedCertificateSync.Reason.INVALID_CONFIGURATION)), observed)
+        val snapshot = sync.diagnostics
+        sync.close()
+        sync.syncOnce()
+        assertSame(snapshot, sync.diagnostics)
+        assertEquals(1, observed.size)
     }
 
     @Test fun firstSetupRetriesWithinAMinuteWhileExistingCertificatesUseBoundedBackoff() {
@@ -227,9 +306,9 @@ class SharedCertificateSyncTest {
         assertEquals(now + SharedCertificateSync.PERIOD_MILLIS, current.getLong("next_attempt", 0))
     }
 
-    private fun client(identity: FakeIdentity, endpoint: String = this.endpoint,
+    private fun client(identity: FakeIdentity, endpoint: String = this.endpoint, changed: () -> Unit = {},
         fetch: () -> SharedCertificateSync.Response) = SharedCertificateSync(context, endpoint,
-        "example-download-token", {}, object : SharedCertificateSync.Transport {
+        "example-download-token", changed, object : SharedCertificateSync.Transport {
             override fun fetch(endpoint: String, token: String) = fetch()
         }, identity) { now }.also(clients::add)
 
@@ -240,7 +319,9 @@ class SharedCertificateSyncTest {
     private class FakeIdentity(private var valid: Boolean) : SharedCertificateSync.Identity {
         var installed = 0
         var reject = false
+        var failure: Exception? = null
         override fun install(version: Long, hostname: String, certificateChain: String, privateKey: String) {
+            failure?.let { throw it }
             if (reject) throw java.security.cert.CertificateException("Synthetic invalid chain")
             installed++; valid = true
         }

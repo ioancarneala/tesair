@@ -28,8 +28,18 @@ class SharedCertificateSync internal constructor(
         context, endpoint, token, onStateChanged, HttpsTransport(), AndroidIdentity(context), System::currentTimeMillis)
 
     enum class State { DISABLED, CHECKING, CURRENT, RETRYING, ERROR }
-    @Volatile var state: State = State.DISABLED
+    internal enum class Stage { DOWNLOAD, BUNDLE, INSTALL, VERIFY }
+    enum class Reason {
+        NOT_STARTED, DISABLED, INVALID_CONFIGURATION, CHECKING, CURRENT, RETRY_SCHEDULED,
+        HTTP_UNAUTHORIZED, HTTP_FORBIDDEN, HTTP_RATE_LIMITED, HTTP_SERVER_ERROR, HTTP_UNEXPECTED,
+        NETWORK_TIMEOUT, NETWORK_UNAVAILABLE, DOWNLOAD_TLS_FAILED, DOWNLOAD_FAILED, INVALID_BUNDLE,
+        IDENTITY_EXPIRED, CLOCK_BEFORE_VALIDITY, IDENTITY_INVALID, KEYSTORE_FAILED, INSTALL_FAILED,
+        IDENTITY_UNAVAILABLE,
+    }
+    data class Diagnostics(val state: State, val reason: Reason)
+    @Volatile var diagnostics = Diagnostics(State.DISABLED, Reason.NOT_STARTED)
         private set
+    val state: State get() = diagnostics.state
     val hostname: String? get() = identity.hostname()
 
     private val preferences = context.applicationContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
@@ -58,8 +68,10 @@ class SharedCertificateSync internal constructor(
     @Synchronized fun start() {
         if (closed.get() || started) return
         started = true
-        if (endpoint.isBlank() || token.isBlank()) { publish(State.DISABLED); return }
-        if (!validEndpoint(endpoint) || token.any { it == '\r' || it == '\n' }) { publish(State.ERROR); return }
+        if (endpoint.isBlank() || token.isBlank()) { publish(State.DISABLED, Reason.DISABLED); return }
+        if (!validEndpoint(endpoint) || token.any { it == '\r' || it == '\n' }) {
+            publish(State.ERROR, Reason.INVALID_CONFIGURATION); return
+        }
         val fingerprint = MessageDigest.getInstance("SHA-256").digest((endpoint + "\n" + token).toByteArray())
             .joinToString("") { "%02x".format(it) }
         if (preferences.getString("endpoint", "") != fingerprint) preferences.edit()
@@ -68,7 +80,11 @@ class SharedCertificateSync internal constructor(
         val remaining = (preferences.getLong("next_attempt", 0) - now()).coerceIn(0, MAX_RETRY_SECONDS * 1000)
         val delay = maxOf(if (identity.trusted()) remaining else remaining.coerceAtMost(60_000),
             (preferences.getLong("server_retry_until", 0) - now()).coerceIn(0, MAX_RETRY_SECONDS * 1000))
-        if (delay > 0) publish(if (identity.trusted()) State.CURRENT else State.RETRYING)
+        if (delay > 0) {
+            val trusted = identity.trusted()
+            publish(if (trusted) State.CURRENT else State.RETRYING,
+                if (trusted) Reason.CURRENT else Reason.RETRY_SCHEDULED)
+        }
         schedule(delay)
         runCatching { connectivity?.registerDefaultNetworkCallback(networkCallback); networkRegistered = connectivity != null }
     }
@@ -85,18 +101,24 @@ class SharedCertificateSync internal constructor(
     /** Separated from scheduling so failure/retry semantics can be tested without network or keys. */
     internal fun syncOnce(): Long {
         if (closed.get() || endpoint.isBlank() || token.isBlank()) return PERIOD_MILLIS
-        if (!validEndpoint(endpoint)) { publish(State.ERROR); return PERIOD_MILLIS }
-        publish(State.CHECKING)
+        if (!validEndpoint(endpoint)) { publish(State.ERROR, Reason.INVALID_CONFIGURATION); return PERIOD_MILLIS }
+        publish(State.CHECKING, Reason.CHECKING)
         preferences.edit().putLong("last_attempt", now()).commit()
         var retryAfter = 0L
         var authenticationRejected = false
+        var stage = Stage.DOWNLOAD
+        var rejection: Reason? = null
         try {
             val response = transport.fetch(endpoint, token)
             if (closed.get()) return PERIOD_MILLIS
             retryAfter = response.retryAfterSeconds.coerceIn(0, MAX_RETRY_SECONDS) * 1000
             preferences.edit().putLong("server_retry_until", if (retryAfter > 0) now() + retryAfter else 0).commit()
             authenticationRejected = response.code == 401 || response.code == 403
-            if (response.code != 200) throw IllegalStateException("Certificate distribution unavailable")
+            if (response.code != 200) {
+                rejection = httpReason(response.code)
+                throw IllegalStateException("Certificate distribution unavailable")
+            }
+            stage = Stage.BUNDLE
             val bundle = JSONObject(response.body)
             val versionValue = bundle.opt("version")
             val version = if (versionValue is Int || versionValue is Long) (versionValue as Number).toLong() else -1
@@ -104,16 +126,18 @@ class SharedCertificateSync internal constructor(
                 bundle.optString("hostname") != TlsIdentity.TRUSTED_HOST) throw IllegalArgumentException("Invalid certificate bundle")
             val chain = bundle.getString("certificateChain")
             val key = bundle.getString("privateKey")
+            stage = Stage.INSTALL
             synchronized(this) {
                 if (closed.get()) return PERIOD_MILLIS
                 identity.install(version, bundle.getString("hostname"), chain, key)
             }
+            stage = Stage.VERIFY
             if (!identity.trusted()) throw IllegalStateException("Trusted certificate unavailable")
             preferences.edit().putInt("failures", 0).remove("server_retry_until")
                 .putLong("next_attempt", now() + PERIOD_MILLIS).commit()
-            publish(State.CURRENT)
+            publish(State.CURRENT, Reason.CURRENT)
             return PERIOD_MILLIS
-        } catch (_: Exception) {
+        } catch (error: Exception) {
             if (closed.get()) return PERIOD_MILLIS
             val failures = preferences.getInt("failures", 0).coerceIn(0, 8)
             val backoff = if (identity.trusted()) (60_000L shl failures).coerceAtMost(PERIOD_MILLIS) else 60_000L
@@ -121,7 +145,8 @@ class SharedCertificateSync internal constructor(
             preferences.edit().putInt("failures", (failures + 1).coerceAtMost(8))
                 .putLong("next_attempt", now() + delay).commit()
             // Never replace or clear an existing certificate on a network or validation failure.
-            publish(if (authenticationRejected) State.ERROR else State.RETRYING)
+            publish(if (authenticationRejected) State.ERROR else State.RETRYING,
+                rejection ?: failureReason(error, stage))
             return delay
         }
     }
@@ -135,9 +160,10 @@ class SharedCertificateSync internal constructor(
         schedule(delay)
     }
 
-    private fun publish(next: State) {
-        if (closed.get() || state == next) return
-        state = next
+    private fun publish(next: State, reason: Reason) {
+        val updated = Diagnostics(next, reason)
+        if (closed.get() || diagnostics == updated) return
+        diagnostics = updated
         runCatching(onStateChanged)
     }
 
@@ -211,6 +237,39 @@ class SharedCertificateSync internal constructor(
         internal const val PERIOD_MILLIS = 6 * 60 * 60 * 1000L
         internal const val MAX_RETRY_SECONDS = 24 * 60 * 60L
         internal const val MAX_RESPONSE_BYTES = 256 * 1024
+        internal fun httpReason(code: Int): Reason = when (code) {
+            401 -> Reason.HTTP_UNAUTHORIZED
+            403 -> Reason.HTTP_FORBIDDEN
+            429 -> Reason.HTTP_RATE_LIMITED
+            in 500..599 -> Reason.HTTP_SERVER_ERROR
+            else -> Reason.HTTP_UNEXPECTED
+        }
+
+        /** Class and stage only: exception messages can contain endpoints or downloaded material. */
+        internal fun failureReason(error: Exception, stage: Stage): Reason {
+            if (stage == Stage.BUNDLE) return Reason.INVALID_BUNDLE
+            if (stage == Stage.VERIFY) return Reason.IDENTITY_UNAVAILABLE
+            if (stage == Stage.DOWNLOAD) return when (error) {
+                is java.net.SocketTimeoutException -> Reason.NETWORK_TIMEOUT
+                is java.net.UnknownHostException, is java.net.NoRouteToHostException,
+                is java.net.ConnectException -> Reason.NETWORK_UNAVAILABLE
+                is javax.net.ssl.SSLException -> Reason.DOWNLOAD_TLS_FAILED
+                else -> Reason.DOWNLOAD_FAILED
+            }
+            var cause: Throwable? = error
+            repeat(8) {
+                val current = cause ?: return@repeat
+                when (current) {
+                    is java.security.cert.CertificateExpiredException -> return Reason.IDENTITY_EXPIRED
+                    is java.security.cert.CertificateNotYetValidException -> return Reason.CLOCK_BEFORE_VALIDITY
+                    is java.security.KeyStoreException, is java.security.UnrecoverableKeyException -> return Reason.KEYSTORE_FAILED
+                }
+                cause = current.cause
+            }
+            return if (error is java.security.GeneralSecurityException ||
+                error is IllegalArgumentException) Reason.IDENTITY_INVALID else Reason.INSTALL_FAILED
+        }
+
         internal fun networkRetryDelay(now: Long, lastAttempt: Long, serverRetryUntil: Long): Long = maxOf(
             (60_000L - (now - lastAttempt)).coerceIn(0, 60_000),
             (serverRetryUntil - now).coerceIn(0, MAX_RETRY_SECONDS * 1000))

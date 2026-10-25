@@ -54,6 +54,9 @@
         <service android:name="com.shilapi.xcertplay.DiPlaySessionService"
             android:exported="false" android:foregroundServiceType="connectedDevice|microphone|location" />
 
+        <receiver android:name="com.shilapi.xcertplay.BrowserStandbyReceiver"
+            android:exported="false" />
+
         <activity android:name="com.shilapi.xcertplay.BrowserOnboardingActivity"
             android:exported="false"
             android:resizeableActivity="true"

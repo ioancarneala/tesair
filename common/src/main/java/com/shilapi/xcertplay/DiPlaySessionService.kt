@@ -6,6 +6,8 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.bluetooth.BluetoothAdapter
+import android.bluetooth.BluetoothDevice
 import android.content.BroadcastReceiver
 import android.content.Intent
 import android.content.Context
@@ -18,6 +20,7 @@ import android.os.Handler
 import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.net.wifi.WifiManager
 import com.shilapi.xcertplay.airplay.MediaSink
 import com.shilapi.xcertplay.airplay.VideoCodec
@@ -25,6 +28,7 @@ import com.shilapi.xcertplay.browser.BrowserStreamOutput
 import com.shilapi.xcertplay.browser.BrowserAddressService
 import com.shilapi.xcertplay.host.R
 import java.util.concurrent.Executors
+import java.util.UUID
 
 /** Keeps an explicitly started connection alive when another car app is in the foreground. */
 class DiPlaySessionService : Service() {
@@ -40,6 +44,14 @@ class DiPlaySessionService : Service() {
     private var destroyed = false
     private var receiverAutomaticStart = true
     private var reliabilityMonitor: BrowserReliabilityMonitor? = null
+    private var screenInteractive = true
+    private var idleSince = -1L
+    private var standbyParked = false
+    private var standbyParking = false
+    private var standbyProbe = false
+    private var standbyGeneration = 0L
+    private var standbyAlarmToken: String? = null
+    private val standbyCheck = Runnable { updateBrowserPower() }
     private val browserMaintenance = object : Runnable {
         override fun run() {
             if (!browserRequested) return
@@ -52,7 +64,7 @@ class DiPlaySessionService : Service() {
                         "browser_address_recovery requested=$requested")
                 }
             }
-            browserHandler.postDelayed(this, BROWSER_MAINTENANCE_MILLIS)
+            browserHandler.postDelayed(this, if (standbyParked) 15 * 60_000L else BROWSER_MAINTENANCE_MILLIS)
         }
     }
     private var cpuLock: PowerManager.WakeLock? = null
@@ -61,6 +73,7 @@ class DiPlaySessionService : Service() {
     @Volatile private var charging = true
     @Volatile private var browserClientConnected = false
     private var batteryReceiver: BroadcastReceiver? = null
+    private var bluetoothReceiver: BroadcastReceiver? = null
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
@@ -77,7 +90,15 @@ class DiPlaySessionService : Service() {
         }
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = try {
+        startCommand(intent, flags, startId)
+    } finally {
+        if (intent?.action == ACTION_STANDBY_PROBE) {
+            BrowserStandbyAlarm.releaseHandoff(intent.getStringExtra(BrowserStandbyAlarm.EXTRA_TOKEN))
+        }
+    }
+
+    private fun startCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val browserMode = browserCarPlayEnabled(this)
         // A queued foreground start still needs promotion when recovery is rejected or stopped.
         // stopSelf(startId) alone can leave Android's deadline active while another start is queued.
@@ -93,14 +114,20 @@ class DiPlaySessionService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (browserMode && (intent == null || intent.action == ACTION_RECOVER) &&
+        val automaticStart = intent == null || intent.action == ACTION_RECOVER || intent.action == ACTION_STANDBY_PROBE
+        if (browserMode && automaticStart &&
             !BrowserSessionRecovery.canRecover(this)) {
             BrowserReliabilityDiagnostics.record(this, "service_restart_skipped")
             stopForeground(STOP_FOREGROUND_REMOVE)
             stopSelf(startId)
             return START_NOT_STICKY
         }
-        if (intent != null && intent.action != ACTION_RECOVER) BrowserSessionRecovery.markStarted(this)
+        if (browserMode && intent?.action == ACTION_STANDBY_PROBE && browserRequested) {
+            val token = intent.getStringExtra(BrowserStandbyAlarm.EXTRA_TOKEN)
+            if (standbyParked && token != null && token == standbyAlarmToken) wakeBrowserReceiver("probe", probe = true)
+            return START_STICKY
+        }
+        if (intent != null && !automaticStart) BrowserSessionRecovery.markStarted(this)
         receiverAutomaticStart = intent?.action != ACTION_RECONNECT && intent?.getBooleanExtra(EXTRA_MANUAL_START, false) != true
         stopRequested = false
         if (browserMode) BrowserReliabilityDiagnostics.record(this,
@@ -132,6 +159,9 @@ class DiPlaySessionService : Service() {
         }
         if (browserMode && currentBrowserRuntime() == null &&
             currentBrowserOutput()?.running == true) startBrowserReceiver()
+        if (browserMode && (standbyParked || standbyParking) && intent?.action != ACTION_STANDBY_PROBE) {
+            wakeBrowserReceiver("service_start")
+        }
         return if (BrowserSessionRecovery.canRecover(this)) START_STICKY else START_NOT_STICKY
     }
 
@@ -167,8 +197,7 @@ class DiPlaySessionService : Service() {
         browserStarted = true
         BrowserReliabilityDiagnostics.record(this, "browser_server_start")
         val token = Any().also { browserStartToken = it }
-        cpuLock = getSystemService(PowerManager::class.java)
-            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DiPlay:browser-stream").apply { acquire() }
+        acquireCpuLock()
         observePower()
         updateWifiLock()
         BrowserReliabilityDiagnostics.record(this,
@@ -210,8 +239,10 @@ class DiPlaySessionService : Service() {
         val receiver = synchronized(Companion) {
             runtime ?: BrowserCarPlayRuntime(applicationContext, output).also { runtime = it }
         }
+        receiver.onStandbyStateChanged = ::onReceiverStateChanged
         receiver.setTelemetryStartOrigin(automatic = receiverAutomaticStart)
         receiver.start()
+        updateBrowserPower()
     }
 
     private fun retireBrowserReceiver() {
@@ -241,6 +272,15 @@ class DiPlaySessionService : Service() {
         browserRetry?.let(browserHandler::removeCallbacks)
         browserRetry = null
         browserHandler.removeCallbacks(browserMaintenance)
+        ++standbyGeneration
+        browserHandler.removeCallbacks(standbyCheck)
+        BrowserStandbyAlarm.cancel(this)
+        standbyAlarmToken = null
+        standbyParked = false
+        standbyParking = false
+        standbyProbe = false
+        idleSince = -1L
+        currentBrowserRuntime()?.onStandbyStateChanged = null
         reliabilityMonitor?.close()
         reliabilityMonitor = null
         releaseBrowserLocks()
@@ -263,17 +303,124 @@ class DiPlaySessionService : Service() {
         wifiLockMode = -1
     }
 
+    private fun acquireCpuLock() {
+        if (cpuLock?.isHeld == true) return
+        cpuLock = getSystemService(PowerManager::class.java)
+            .newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "DiPlay:browser-stream").apply { acquire() }
+    }
+
+    private fun standbyDemand(): Boolean = charging || screenInteractive || browserClientConnected ||
+        currentBrowserRuntime()?.sessionActive == true
+
+    private fun onReceiverStateChanged() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            browserHandler.post { onReceiverStateChanged() }
+            return
+        }
+        reliabilityMonitor?.activityChanged()
+        // Manual Connect clears the runtime's parked flag before it queues any connection work.
+        if (standbyParked && currentBrowserRuntime()?.standbyParked == false) {
+            wakeBrowserReceiver("receiver_action")
+        } else updateBrowserPower()
+    }
+
+    private fun wakeBrowserReceiver(reason: String, probe: Boolean = false) {
+        if (destroyed || !browserRequested || !browserStarted) return
+        ++standbyGeneration
+        browserHandler.removeCallbacks(standbyCheck)
+        BrowserStandbyAlarm.cancel(this)
+        standbyAlarmToken = null
+        standbyParked = false
+        standbyParking = false
+        standbyProbe = probe
+        idleSince = SystemClock.elapsedRealtime()
+        // Acquire before resume can enqueue preparation or Bluetooth work.
+        acquireCpuLock()
+        updateWifiLock()
+        browserHandler.removeCallbacks(browserMaintenance)
+        browserHandler.postDelayed(browserMaintenance, BROWSER_MAINTENANCE_MILLIS)
+        BrowserReliabilityDiagnostics.record(this, "standby_wake reason=$reason")
+        currentBrowserRuntime()?.resumeFromStandby()
+        reliabilityMonitor?.activityChanged()
+        updateBrowserPower()
+    }
+
+    private fun updateBrowserPower() {
+        if (destroyed || !browserRequested || !browserStarted) return
+        browserHandler.removeCallbacks(standbyCheck)
+        if (standbyDemand()) {
+            if (standbyParked || standbyParking) {
+                wakeBrowserReceiver("activity")
+                return
+            }
+            idleSince = -1L
+            standbyProbe = false
+            acquireCpuLock()
+            return
+        }
+        if (standbyParked || standbyParking) return
+        val now = SystemClock.elapsedRealtime()
+        if (idleSince < 0) idleSince = now
+        val remaining = if (standbyProbe) 0L else STANDBY_GRACE_MILLIS - (now - idleSince)
+        if (remaining > 0) {
+            browserHandler.postDelayed(standbyCheck, remaining)
+            return
+        }
+        val receiver = currentBrowserRuntime() ?: return
+        // Never suspend a live bootstrap. Wait for its success or failure callback instead.
+        if (!receiver.standbyReady) return
+        standbyParking = true
+        val generation = ++standbyGeneration
+        val accepted = receiver.parkForStandby {
+            if (destroyed || !browserRequested || generation != standbyGeneration) return@parkForStandby
+            standbyParking = false
+            if (standbyDemand() || !receiver.standbyParked) {
+                wakeBrowserReceiver("activity_during_park")
+                return@parkForStandby
+            }
+            val token = UUID.randomUUID().toString()
+            // A sleeping Handler cannot provide the fallback. Arm the wake alarm first.
+            if (!BrowserStandbyAlarm.schedule(this, token)) {
+                wakeBrowserReceiver("alarm_unavailable")
+                return@parkForStandby
+            }
+            standbyAlarmToken = token
+            standbyParked = true
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+            wifiLock = null
+            wifiLockMode = -1
+            if (cpuLock?.isHeld == true) cpuLock?.release()
+            cpuLock = null
+            reliabilityMonitor?.activityChanged()
+            BrowserReliabilityDiagnostics.record(this, "standby_enter cpu=false wifi=false")
+        }
+        if (!accepted) standbyParking = false
+    }
+
     /** Tracks charging state so the radio can back off while parked on battery. */
     private fun observePower() {
         if (batteryReceiver != null) return
+        screenInteractive = getSystemService(PowerManager::class.java).isInteractive
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
-                val plugged = intent?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0
-                onChargingChanged(plugged != 0)
+                when (intent?.action) {
+                    Intent.ACTION_BATTERY_CHANGED -> onChargingChanged(intent.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) != 0)
+                    Intent.ACTION_SCREEN_ON -> {
+                        screenInteractive = true
+                        wakeBrowserReceiver("screen_on")
+                    }
+                    Intent.ACTION_SCREEN_OFF -> {
+                        screenInteractive = false
+                        updateBrowserPower()
+                    }
+                }
             }
         }
         batteryReceiver = receiver
-        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED)
+        val filter = IntentFilter(Intent.ACTION_BATTERY_CHANGED).apply {
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_SCREEN_OFF)
+        }
         // ACTION_BATTERY_CHANGED is a sticky, protected system broadcast, so it is exempt from the
         // export-flag rule. Still pass the flag where the platform supports it (API 33+).
         val sticky = if (Build.VERSION.SDK_INT >= 33) {
@@ -282,29 +429,60 @@ class DiPlaySessionService : Service() {
             registerReceiver(receiver, filter)
         }
         onChargingChanged((sticky?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+        val bluetooth = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val wake = when (intent?.action) {
+                    BluetoothAdapter.ACTION_STATE_CHANGED -> intent.getIntExtra(BluetoothAdapter.EXTRA_STATE, -1) == BluetoothAdapter.STATE_ON
+                    BluetoothDevice.ACTION_ACL_CONNECTED -> runCatching {
+                        @Suppress("DEPRECATION")
+                        val device = intent.getParcelableExtra<BluetoothDevice>(BluetoothDevice.EXTRA_DEVICE)
+                        device != null && device.address == DiPlayPreferences.phoneAddress(this@DiPlaySessionService)
+                    }.getOrDefault(false)
+                    else -> false
+                }
+                if (wake) wakeBrowserReceiver("bluetooth")
+            }
+        }
+        bluetoothReceiver = bluetooth
+        val bluetoothFilter = IntentFilter(BluetoothAdapter.ACTION_STATE_CHANGED).apply {
+            addAction(BluetoothDevice.ACTION_ACL_CONNECTED)
+        }
+        // These protected broadcasts may come from Bluetooth's privileged non-system UID.
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(bluetooth, bluetoothFilter, Context.RECEIVER_EXPORTED)
+        else registerReceiver(bluetooth, bluetoothFilter)
     }
 
     private fun onChargingChanged(nowCharging: Boolean) {
         if (nowCharging == charging) return
         charging = nowCharging
-        browserHandler.post { updateWifiLock() }
+        browserHandler.post {
+            if (nowCharging) wakeBrowserReceiver("power")
+            updateWifiLock()
+            updateBrowserPower()
+        }
     }
 
     private fun onBrowserClientConnection(connected: Boolean) {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            browserHandler.post { onBrowserClientConnection(connected) }
+            return
+        }
         if (browserClientConnected == connected) return
         browserClientConnected = connected
+        if (connected) wakeBrowserReceiver("browser")
         updateWifiLock()
+        updateBrowserPower()
+        reliabilityMonitor?.activityChanged()
     }
 
     /**
      * Holds the WiFi radio at high-performance only while a browser is streaming or the phone is
-     * externally powered. On battery with no browser client it falls back to a normal full lock,
-     * which keeps the server reachable without forcing maximum radio power. The CPU lock is
-     * unchanged because the server must answer the Tesla browser promptly.
+     * externally powered. These station-mode locks are not a hotspot reachability guarantee;
+     * parked standby releases them entirely along with the CPU lock.
      */
     @Suppress("DEPRECATION")
     private fun updateWifiLock() {
-        if (destroyed || !browserRequested) return
+        if (destroyed || !browserRequested || standbyParked) return
         val mode = browserWifiLockMode(charging, browserClientConnected)
         if (wifiLockMode == mode) return
         if (wifiLock?.isHeld == true) wifiLock?.release()
@@ -323,6 +501,8 @@ class DiPlaySessionService : Service() {
         cancelBrowserRecovery()
         batteryReceiver?.let { runCatching { unregisterReceiver(it) } }
         batteryReceiver = null
+        bluetoothReceiver?.let { runCatching { unregisterReceiver(it) } }
+        bluetoothReceiver = null
         if (browserCarPlayEnabled(this)) {
             BrowserAddressService.pause(this)
             val output = synchronized(Companion) { browser.also { browser = null } }
@@ -338,10 +518,12 @@ class DiPlaySessionService : Service() {
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
         const val ACTION_RECONNECT = "com.shihab.diplay.RECONNECT"
         const val ACTION_RECOVER = "com.shihab.diplay.RECOVER"
+        const val ACTION_STANDBY_PROBE = "co.tesair.STANDBY_PROBE"
         const val EXTRA_MANUAL_START = "telemetry_manual_start"
         private var runtime: BrowserCarPlayRuntime? = null
         @Synchronized internal fun currentBrowserRuntime(): BrowserCarPlayRuntime? = runtime
         private const val BROWSER_MAINTENANCE_MILLIS = 30_000L
+        private const val STANDBY_GRACE_MILLIS = 2 * 60_000L
         private const val CHANNEL = "diplay_connection"
         private var browser: BrowserStreamOutput? = null
         @Synchronized internal fun currentBrowserOutput(): BrowserStreamOutput? = browser

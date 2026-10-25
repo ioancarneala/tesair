@@ -64,18 +64,6 @@ public class BrowserTransportTest {
         assertFalse(new BrowserSession().authorized(session.cookie()));
         assertFalse(session.authorized(null)); assertFalse(session.authorized("bridge=wrong"));
     }
-    @Test public void queueOverflowDropsDependenciesUntilAnotherKeyframe() throws Exception {
-        FrameQueue queue = new FrameQueue();
-        assertFalse(queue.offer(frame(false, 0)));
-        assertTrue(queue.offer(frame(true, 1))); queue.offer(frame(false, 2)); queue.offer(frame(false, 3));
-        assertFalse(queue.offer(frame(false, 4))); assertFalse(queue.offer(frame(false, 5)));
-        assertTrue(queue.offer(frame(true, 6))); assertEquals(6, queue.poll().queuedNanos());
-        queue.reset(); assertFalse(queue.offer(frame(false, 7)));
-    }
-    @Test public void slowFrameQueueDiscardsStaleDependencies() {
-        FrameQueue queue = new FrameQueue(); queue.offer(frame(true, 1));
-        assertFalse(queue.offer(frame(false, 150_000_002L)));
-    }
     @Test public void frameProtocolPreservesIdrAndMicrosecondTimestamp() {
         byte[] config = {0, 0, 0, 1, 0x67}, data = {0, 0, 1, 0x65};
         ByteBuffer packet = ByteBuffer.wrap(VideoFormat.packet(data, config, true, 123456789));
@@ -84,7 +72,6 @@ public class BrowserTransportTest {
         assertArrayEquals(ByteBuffer.allocate(config.length + data.length).put(config).put(data).array(), annexB);
     }
 
-    private static FrameQueue.Frame frame(boolean key, long time) { return new FrameQueue.Frame(new byte[]{1}, key, time, "format"); }
     private static byte[] avcc(byte[] sps, byte[] pps) {
         return ByteBuffer.allocate(11 + sps.length + pps.length).put(new byte[]{1, 100, 0, 40, (byte) 255, (byte) 225})
                 .putShort((short) sps.length).put(sps).put((byte) 1).putShort((short) pps.length).put(pps).array();
