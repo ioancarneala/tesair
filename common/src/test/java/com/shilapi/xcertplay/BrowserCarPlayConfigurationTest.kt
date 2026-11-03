@@ -96,10 +96,10 @@ class BrowserCarPlayConfigurationTest {
         val layout = BrowserCarPlayLayout.create(1182, 920, AirPlayPersistence.loadBrowserResolutionPercent(context))
         val video = BrowserCarPlayConfiguration.video(context, identity, layout)
 
-        assertEquals(2880, video.main.widthPixels)
-        assertEquals(2160, video.main.heightPixels)
+        assertEquals(1890, video.main.widthPixels)
+        assertEquals(1472, video.main.heightPixels)
         assertEquals(150, video.main.widthPhysicalMm)
-        assertEquals(113, video.main.heightPhysicalMm)
+        assertEquals(117, video.main.heightPhysicalMm)
         assertEquals(60, video.main.fps)
         assertFalse(video.hevc)
         assertTrue(video.disableAudioOutput)
@@ -131,8 +131,8 @@ class BrowserCarPlayConfigurationTest {
         val size = BrowserCarPlayViewport.load(context)
         val video = BrowserCarPlayConfiguration.video(context, identity,
             BrowserCarPlayLayout.create(size.first, size.second))
-        assertEquals(1920, video.main.widthPixels)
-        assertEquals(1440, video.main.heightPixels)
+        assertEquals(1182, video.main.widthPixels)
+        assertEquals(920, video.main.heightPixels)
         val area = video.main.viewAreas!![video.main.initialViewArea]
         assertEquals(1182.0 / 920, area.width.toDouble() / area.height, 0.002)
     }

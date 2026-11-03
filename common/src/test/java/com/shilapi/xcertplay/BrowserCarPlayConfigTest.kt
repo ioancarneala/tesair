@@ -54,7 +54,7 @@ class BrowserCarPlayConfigTest {
     @Test fun defaultKeepsTheWorkingCanvasAndRoutesAudioDirectlyFromIphone() {
         val config = config(100)
         assertEquals(1920, config.main.widthPixels)
-        assertEquals(1440, config.main.heightPixels)
+        assertEquals(1080, config.main.heightPixels)
         assertTrue(config.disableAudioOutput)
         assertFalse(config.microphone)
         assertFalse(config.hevc)
@@ -93,11 +93,18 @@ class BrowserCarPlayConfigTest {
         assertEquals(previous.disableAudioOutput, updated.disableAudioOutput)
     }
 
+    @Test fun browserPathAdvertisesHevcOnlyWhenTheViewerAllowsIt() {
+        val layout = BrowserCarPlayLayout.create(1182, 920)
+        val identity = AirPlayPersistence.loadIdentity(activity)
+        assertFalse(BrowserCarPlayConfiguration.video(activity, identity, layout).hevc)
+        assertTrue(BrowserCarPlayConfiguration.video(activity, identity, layout, hevc = true).hevc)
+    }
+
     @Test fun browserQualityChangesTheAdvertisedSourceAndRetainsNativeAreas() {
         val normal = config(100)
         val sharper = config(160)
-        assertEquals(2880, sharper.main.widthPixels)
-        assertEquals(2160, sharper.main.heightPixels)
+        assertEquals(3072, sharper.main.widthPixels)
+        assertEquals(1728, sharper.main.heightPixels)
         assertEquals(normal.main.widthPhysicalMm, sharper.main.widthPhysicalMm)
         assertEquals(normal.main.heightPhysicalMm, sharper.main.heightPhysicalMm)
         assertEquals(normal.main.viewAreas!!.size, sharper.main.viewAreas!!.size)
@@ -133,9 +140,9 @@ class BrowserCarPlayConfigTest {
         val larger = config(160)
 
         assertEquals(300, running.main.widthPhysicalMm)
-        assertEquals(225, running.main.heightPhysicalMm)
+        assertEquals(169, running.main.heightPhysicalMm)
         assertEquals(250, larger.main.widthPhysicalMm)
-        assertEquals(188, larger.main.heightPhysicalMm)
+        assertEquals(141, larger.main.heightPhysicalMm)
         assertEquals(running.main.widthPixels, larger.main.widthPixels)
         assertEquals(running.main.heightPixels, larger.main.heightPixels)
         assertEquals(running.main.viewAreas, larger.main.viewAreas)

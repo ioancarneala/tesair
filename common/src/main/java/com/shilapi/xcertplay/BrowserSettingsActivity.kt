@@ -15,6 +15,7 @@ import android.widget.Button
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.TimePicker
@@ -22,9 +23,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import com.shilapi.xcertplay.airplay.AirPlayDisplaySettings
 import com.shilapi.xcertplay.host.R
 import com.shilapi.xcertplay.orchestration.WirelessHotspotMode
-import java.io.File
 import java.util.Locale
 
 /** Browser-only preferences. Merely visiting a screen never restarts the receiver. */
@@ -38,6 +39,8 @@ class BrowserSettingsActivity : ComponentActivity() {
     private var exportButton: Button? = null
     private var dialog: AlertDialog? = null
     private val motion = BrowserMotion()
+
+    private companion object { const val CUSTOM_SIZE = -1 }
 
     override fun attachBaseContext(newBase: Context) = super.attachBaseContext(AppLocale.wrap(newBase))
 
@@ -273,7 +276,7 @@ class BrowserSettingsActivity : ComponentActivity() {
         row(layout, R.string.settings_browser_preferences_interface_size,
             getString(BrowserPicturePresets.title(sizes, currentSize, R.string.settings_browser_preferences_custom_size))) {
             presetDialog(R.string.settings_browser_preferences_interface_size, sizes, currentSize,
-                R.string.settings_browser_preferences_keep_size, reconnectOnApply = true) {
+                R.string.settings_browser_preferences_keep_size, reconnectOnApply = true, customSize = true) {
                 AirPlayPersistence.saveWidthPhysicalMm(this, it)
             }
         }
@@ -330,9 +333,11 @@ class BrowserSettingsActivity : ComponentActivity() {
         current: Int,
         keepCurrentLabel: Int,
         reconnectOnApply: Boolean = false,
+        customSize: Boolean = false,
         save: (Int) -> Unit,
     ) {
-        val choices = BrowserPicturePresets.includingSaved(presets, current, keepCurrentLabel)
+        val choices = BrowserPicturePresets.includingSaved(presets, current, keepCurrentLabel).toMutableList()
+        if (customSize) choices += BrowserPicturePresets.Preset(CUSTOM_SIZE, R.string.settings_browser_preferences_custom_size)
         var selected = choices.indexOfFirst { it.value == current }
         val running = reconnectOnApply && CarPlayBackgroundSession.hasSession()
         showDialog(AlertDialog.Builder(this).setTitle(title)
@@ -341,10 +346,46 @@ class BrowserSettingsActivity : ComponentActivity() {
             }
             .setPositiveButton(if (running) R.string.apply_and_reconnect else R.string.save) { _, _ ->
                 val chosen = choices[selected].value
-                if (chosen != current) {
+                if (chosen == CUSTOM_SIZE) sizeDialog(current, running, save)
+                else if (chosen != current) {
                     save(chosen)
                     markReconnectNeeded()
                     if (running) reconnect()
+                }
+            }.setNegativeButton(R.string.cancel, null).create())
+    }
+
+    /** Ten-millimetre steps interpolate between the four fixed interface presets. */
+    private fun sizeDialog(current: Int, reconnect: Boolean, save: (Int) -> Unit) {
+        val minimum = AirPlayDisplaySettings.MIN_WIDTH_PHYSICAL_MM
+        val step = AirPlayDisplaySettings.WIDTH_PHYSICAL_MM_STEP
+        val selections = ((AirPlayDisplaySettings.MAX_WIDTH_PHYSICAL_MM - minimum) / step).coerceAtLeast(1)
+        val value = text("", 16)
+        fun label(progress: Int) { value.text = "${minimum + progress * step} mm" }
+        val slider = SeekBar(this).apply {
+            max = selections
+            progress = ((current - minimum) / step).coerceIn(0, selections)
+            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) = label(progress)
+                override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+            })
+        }
+        label(slider.progress)
+        val box = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(24), dp(8), dp(24), 0)
+            addView(value)
+            addView(slider)
+        }
+        showDialog(AlertDialog.Builder(this).setTitle(R.string.settings_browser_preferences_interface_size)
+            .setView(box)
+            .setPositiveButton(if (reconnect) R.string.apply_and_reconnect else R.string.save) { _, _ ->
+                val chosen = minimum + slider.progress * step
+                if (chosen != current) {
+                    save(chosen)
+                    markReconnectNeeded()
+                    if (reconnect) reconnect()
                 }
             }.setNegativeButton(R.string.cancel, null).create())
     }
@@ -419,8 +460,7 @@ class BrowserSettingsActivity : ComponentActivity() {
         val app = applicationContext
         Thread({
             val result = runCatching {
-                check(BrowserAutomaticReport.save(app))
-                val report = File(app.filesDir, "automatic-diagnostics/latest.txt").readText()
+                val report = BrowserAutomaticReport.manualReport(app)
                 val fileName = "CarPlay-report-${System.currentTimeMillis()}.txt"
                 Triple(DiagnosticExportStore.saveWithoutPicker(app, fileName, report), fileName, report)
             }

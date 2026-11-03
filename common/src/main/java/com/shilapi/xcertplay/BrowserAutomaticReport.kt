@@ -17,7 +17,7 @@ internal object BrowserAutomaticReport {
     fun save(context: Context): Boolean = try {
         val app = context.applicationContext
         if (!browserCarPlayEnabled(app)) false else {
-            val report = report(app)
+            val report = report(app, JOURNAL_TAIL_BYTES, automatic = true)
             // Deliberately outside the FileProvider's diagnostic-reports directory.
             val file = AtomicFile(File(app.filesDir, "automatic-diagnostics/latest.txt"))
             var stream: FileOutputStream? = null
@@ -36,14 +36,21 @@ internal object BrowserAutomaticReport {
         false
     }
 
-    private fun report(context: Context): String {
+    /** Explicit export includes the retained journal history without enlarging periodic snapshots. */
+    fun manualReport(context: Context): String {
+        val app = context.applicationContext
+        check(browserCarPlayEnabled(app))
+        return report(app, SessionLogFile.MAX_BYTES, automatic = false)
+    }
+
+    private fun report(context: Context, journalTailBytes: Long, automatic: Boolean): String {
         // Called on the health worker, never from a video callback or the main thread.
         AsyncDiagnosticLog.awaitIdle(1_000)
         @Suppress("DEPRECATION")
         val version = runCatching { context.packageManager.getPackageInfo(context.packageName, 0).versionName }
             .getOrNull() ?: "unknown"
         return buildString {
-            appendLine("TesAir automatic diagnostic report")
+            appendLine(if (automatic) "TesAir automatic diagnostic report" else "TesAir diagnostic report")
             appendLine("Version: $version")
             appendLine("capturedAtEpochMs=${System.currentTimeMillis()}")
             appendLine("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}")
@@ -67,11 +74,11 @@ internal object BrowserAutomaticReport {
             appendLine()
             appendLine("--- Browser reliability history (bounded tails) ---")
             appendLine(SessionLogFile.report(File(context.filesDir, "logs/reliability.log"),
-                maxBytesPerFile = JOURNAL_TAIL_BYTES))
+                maxBytesPerFile = journalTailBytes))
             appendLine()
             appendLine("--- Receiver history (bounded tails) ---")
             appendLine(SessionLogFile.report(File(context.filesDir, "logs/diplay.log"),
-                maxBytesPerFile = JOURNAL_TAIL_BYTES))
+                maxBytesPerFile = journalTailBytes))
         }.lineSequence().mapNotNull(DiagnosticRedactor::redact).joinToString("\n") + "\n"
     }
 }

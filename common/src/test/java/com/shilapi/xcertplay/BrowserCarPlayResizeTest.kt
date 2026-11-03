@@ -167,7 +167,7 @@ class BrowserCarPlayResizeTest {
         assertSame(display, getField("sessionDisplay"))
         assertSame(negotiated, ReflectionHelpers.getField<AirPlayConfig>(controller, "airPlayConfig"))
         assertEquals(1920, (getField("sessionDisplay") as CarPlaySessionDisplay).width)
-        assertEquals(1440, (getField("sessionDisplay") as CarPlaySessionDisplay).height)
+        assertEquals(1080, (getField("sessionDisplay") as CarPlaySessionDisplay).height)
         assertEquals(0, getField("restartGeneration"))
         assertFalse(getField("handshakeResetInProgress") as Boolean)
         assertTrue("Resize must not create a replacement CarPlay controller", construction.constructed().isEmpty())

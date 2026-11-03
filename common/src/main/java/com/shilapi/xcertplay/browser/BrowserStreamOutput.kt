@@ -50,7 +50,14 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     private var lastContact: AirPlayContact? = null
     private var pictureWidth = 0
     private var pictureHeight = 0
+    private var canvasWidth = 0
+    private var canvasHeight = 0
+    @Volatile private var hevcRejected = false
+    private var hevcCapabilityTried = false
     private var formatFailure: Runnable? = null
+
+    /** HEVC is advertised only when the page decodes it and this session has not rejected it. */
+    val allowHevc: Boolean get() = server.hevcSupported() && !hevcRejected
 
     @Volatile var running: Boolean = false
         private set
@@ -63,8 +70,10 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     var onStatusChanged: () -> Unit = {}
     var onFirstFrameRendered: () -> Unit = {}
     @Volatile var onVideoFailure: (Int, String) -> Unit = { _, _ -> }
+    @Volatile var onVideoConfigured: (Int) -> Unit = {}
     @Volatile var onDiagnostic: (String) -> Unit = {}
     @Volatile var onClientConnection: (Boolean) -> Unit = {}
+    @Volatile var onCongestion: () -> Unit = {}
     val clientCount: Int get() = server.clientCount()
     val certificateSyncState: SharedCertificateSync.State get() = certificates.state
     internal val certificateDiagnostics: SharedCertificateSync.Diagnostics get() = certificates.diagnostics
@@ -84,6 +93,23 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
 
     init {
         server.setDiagnosticHandler(::record)
+        server.setCongestionHandler { onCongestion() }
+        server.setHevcRejectedHandler {
+            synchronized(mediaLock) {
+                hevcRejected = true
+                onVideoFailure(telemetryAttempt, "browser_hevc_unsupported")
+            }
+        }
+        server.setHevcCapabilityHandler {
+            synchronized(mediaLock) {
+                // The receiver may have started before the page reported HEVC support.
+                if (server.hevcSupported() && !hevcRejected && !hevcCapabilityTried &&
+                    codec == VideoCodec.H264 && configured) {
+                    hevcCapabilityTried = true
+                    onVideoFailure(telemetryAttempt, "hevc_capability")
+                }
+            }
+        }
         server.setKeyframeHandler(::requestKeyframe)
         server.setDisplayHandler { width, height ->
             cancelTouch()
@@ -126,6 +152,8 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
     /** A native iPhone layout change leaves the encoded canvas and decoder running. */
     fun setViewArea(area: AirPlayViewArea?, canvasWidth: Int, canvasHeight: Int) {
         if (closed.get()) return
+        this.canvasWidth = canvasWidth
+        this.canvasHeight = canvasHeight
         cancelTouch()
         server.setViewArea(area?.originX ?: 0, area?.originY ?: 0,
             area?.width ?: canvasWidth, area?.height ?: canvasHeight, canvasWidth, canvasHeight)
@@ -165,34 +193,74 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
         if (type != MAIN_SCREEN || closed.get()) return
         synchronized(mediaLock) {
             this.codec = codec
-            if (codec != VideoCodec.H264) {
+            if (codec != VideoCodec.H264 && !(codec == VideoCodec.H265 && allowHevc)) {
                 awaitVideoFormatLocked("unsupported_iphone_codec", codec.name.lowercase())
             }
         }
         if (codec != VideoCodec.H264) cancelTouch()
     }
 
+    override fun onVideoConfigRejected(type: Int) {
+        if (type != MAIN_SCREEN || closed.get()) return
+        synchronized(mediaLock) {
+            // Never advertise a codec this relay cannot carry for the rest of the session.
+            if (codec == VideoCodec.H265) hevcRejected = true
+            awaitVideoFormatLocked("video_config_unknown", codec.name.lowercase())
+        }
+        cancelTouch()
+    }
+
     override fun onVideoConfig(type: Int, codecData: ByteArray) {
         if (type != MAIN_SCREEN || closed.get()) return
         var changed = false
         synchronized(mediaLock) {
-            if (codec != VideoCodec.H264) return
             try {
-                val format = H264Format.fromAvcC(codecData)
-                pictureWidth = format.width; pictureHeight = format.height
-                val previousEpoch = server.videoGeneration()
-                server.videoConfig(format.annexB, format.width, format.height)
-                if (server.videoGeneration() != previousEpoch) {
-                    changed = true
-                    mediaGeneration++; renderedGeneration = -1
-                    record("video_format width=${format.width} height=${format.height}")
+                val width: Int
+                val height: Int
+                when (codec) {
+                    VideoCodec.H264 -> {
+                        val format = H264Format.fromAvcC(codecData)
+                        width = format.width; height = format.height
+                        val previousEpoch = server.videoGeneration()
+                        server.videoConfig(format.annexB, width, height, VideoFormat.codec(format.annexB))
+                        if (server.videoGeneration() != previousEpoch) {
+                            changed = true
+                            mediaGeneration++; renderedGeneration = -1
+                        }
+                    }
+                    VideoCodec.H265 -> {
+                        if (!allowHevc) {
+                            changed = true
+                            awaitVideoFormatLocked("unsupported_iphone_codec", "h265")
+                            return@synchronized
+                        }
+                        // HEVC has no browser description: Annex B parameter sets are prepended
+                        // to each key frame, and the canvas size comes from our own display config.
+                        val sets = HevcFormat.parameterSets(codecData)
+                        width = if (canvasWidth > 0) canvasWidth else 1920
+                        height = if (canvasHeight > 0) canvasHeight else 1080
+                        val previousEpoch = server.videoGeneration()
+                        server.videoConfig(sets, width, height, HevcFormat.codec(codecData))
+                        if (server.videoGeneration() != previousEpoch) {
+                            changed = true
+                            mediaGeneration++; renderedGeneration = -1
+                        }
+                    }
+                    else -> return@synchronized
                 }
+                pictureWidth = width; pictureHeight = height
+                record("video_format width=$width height=$height codec=${codec.name.lowercase()}")
                 configured = true
                 clearFormatFailureLocked()
-                updateStatus("Direct CarPlay video · ${format.width}×${format.height}")
+                val attempt = telemetryAttempt
+                main.post {
+                    if (!closed.get() && configured && telemetryAttempt == attempt) onVideoConfigured(attempt)
+                }
+                updateStatus("Direct CarPlay video · ${width}×${height}")
             } catch (_: Exception) {
                 changed = true
-                awaitVideoFormatLocked("video_config_rejected", "h264")
+                if (codec == VideoCodec.H265) hevcRejected = true
+                awaitVideoFormatLocked("video_config_rejected", codec.name.lowercase())
             }
         }
         if (changed) cancelTouch()
@@ -238,9 +306,10 @@ class BrowserStreamOutput(context: Context) : MediaSink, Closeable {
             if (receivedGeneration != mediaGeneration) {
                 receivedGeneration = mediaGeneration
                 BrowserTelemetry.record(app, "video_received", mapOf("attempt" to telemetryAttempt,
-                    "width" to pictureWidth, "height" to pictureHeight, "codec" to "h264"))
+                    "width" to pictureWidth, "height" to pictureHeight, "codec" to codec.name.lowercase()))
             }
-            server.frame(naluBytes, H264Format.isKeyframe(naluBytes), clock.timestamp(senderNanos, arrivalNanos))
+            val key = if (codec == VideoCodec.H265) HevcFormat.isKeyframe(naluBytes) else H264Format.isKeyframe(naluBytes)
+            server.frame(naluBytes, key, clock.timestamp(senderNanos, arrivalNanos))
         }
     }
 

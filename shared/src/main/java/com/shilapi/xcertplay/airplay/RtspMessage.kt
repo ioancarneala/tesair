@@ -26,6 +26,9 @@ object RtspMessage {
 
     data class Parsed(val messages: List<Request>, val rest: ByteArray)
 
+    private const val MAX_HEADER_BYTES = 64 * 1024
+    private const val MAX_BODY_BYTES = 16 * 1024 * 1024
+    private const val MAX_BUFFER_BYTES = MAX_HEADER_BYTES + MAX_BODY_BYTES + 1024
     private val headerEnd = "\r\n\r\n".toByteArray(Charsets.US_ASCII)
     private val statusText = mapOf(
         200 to "OK",
@@ -36,10 +39,15 @@ object RtspMessage {
 
     /** Parses as many complete messages as are buffered, retaining any partial remainder. */
     fun parseMessages(buffer: ByteArray): Parsed {
+        require(buffer.size <= MAX_BUFFER_BYTES) { "rtsp: buffer limit" }
         val messages = ArrayList<Request>()
         var offset = 0
         while (offset < buffer.size) {
-            val headerEndIndex = indexOf(buffer, headerEnd, offset) ?: break
+            val headerEndIndex = indexOf(buffer, headerEnd, offset) ?: run {
+                require(buffer.size - offset <= MAX_HEADER_BYTES) { "rtsp: header limit" }
+                break
+            }
+            require(headerEndIndex - offset <= MAX_HEADER_BYTES) { "rtsp: header limit" }
             val headerText = String(buffer, offset, headerEndIndex - offset, Charsets.US_ASCII)
             val lines = headerText.split("\r\n")
             if (lines.isEmpty()) {
@@ -54,8 +62,9 @@ object RtspMessage {
                 headers[line.substring(0, separator).trim().lowercase()] =
                     line.substring(separator + 1).trim()
             }
-            val bodyStart = headerEndIndex + headerEnd.size
-            val contentLength = headers["content-length"]?.toIntOrNull()?.coerceAtLeast(0) ?: 0
+            val bodyStart = headerEndIndex.toLong() + headerEnd.size
+            val contentLength = headers["content-length"]?.toLongOrNull() ?: 0L
+            require(contentLength in 0..MAX_BODY_BYTES.toLong()) { "rtsp: body limit" }
             val bodyEnd = bodyStart + contentLength
             if (bodyEnd > buffer.size) break
             messages.add(
@@ -64,10 +73,10 @@ object RtspMessage {
                     path = requestLine.getOrElse(1) { "" },
                     protocol = requestLine.getOrElse(2) { "RTSP/1.0" },
                     headers = headers,
-                    body = buffer.copyOfRange(bodyStart, bodyEnd),
+                    body = buffer.copyOfRange(bodyStart.toInt(), bodyEnd.toInt()),
                 ),
             )
-            offset = bodyEnd
+            offset = bodyEnd.toInt()
         }
         return Parsed(messages, buffer.copyOfRange(offset, buffer.size))
     }

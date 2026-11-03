@@ -41,7 +41,9 @@ class DiPlaySessionService : Service() {
     private var browserRetryAttempt = 0
     private var stopRequested = false
     private var receiverRetiring = false
+    private var waitingForReceiver: BrowserCarPlayRuntime? = null
     private var destroyed = false
+    private var connectionStateClaimed = false
     private var receiverAutomaticStart = true
     private var reliabilityMonitor: BrowserReliabilityMonitor? = null
     private var screenInteractive = true
@@ -79,6 +81,7 @@ class DiPlaySessionService : Service() {
     override fun onCreate() {
         super.onCreate()
         if (browserCarPlayEnabled(this)) {
+            claimConnectionState()
             BrowserReliabilityDiagnostics.record(this, "service_create")
             BrowserTelemetry.pump(this)
             BrowserUpdates.check(this)
@@ -93,6 +96,7 @@ class DiPlaySessionService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = try {
         startCommand(intent, flags, startId)
     } finally {
+        publishConnectionState()
         if (intent?.action == ACTION_STANDBY_PROBE) {
             BrowserStandbyAlarm.releaseHandoff(intent.getStringExtra(BrowserStandbyAlarm.EXTRA_TOKEN))
         }
@@ -100,6 +104,7 @@ class DiPlaySessionService : Service() {
 
     private fun startCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val browserMode = browserCarPlayEnabled(this)
+        if (browserMode) claimConnectionState()
         // A queued foreground start still needs promotion when recovery is rejected or stopped.
         // stopSelf(startId) alone can leave Android's deadline active while another start is queued.
         if (browserMode) startSessionForeground(browserMode)
@@ -141,6 +146,12 @@ class DiPlaySessionService : Service() {
         if (browserMode) {
             browserRequested = true
             if (reliabilityMonitor == null) reliabilityMonitor = BrowserReliabilityMonitor(this)
+            // An explicit Connect must not wait for a failed server-start backoff.
+            if (intent?.action == ACTION_RECONNECT) {
+                browserRetry?.let(browserHandler::removeCallbacks)
+                browserRetry = null
+                browserRetryAttempt = 0
+            }
             if (browserRetry == null) startBrowserOutput()
             browserHandler.removeCallbacks(browserMaintenance)
             browserHandler.postDelayed(browserMaintenance, BROWSER_MAINTENANCE_MILLIS)
@@ -204,6 +215,8 @@ class DiPlaySessionService : Service() {
             "power_locks cpu=${cpuLock?.isHeld == true} wifi=${wifiLock?.isHeld == true}")
         val output = browserOutput(this)
         output.onClientConnection = ::onBrowserClientConnection
+        output.onCongestion = ::onLinkCongestion
+        output.onStatusChanged = ::publishConnectionState
         browserWorker.execute {
             val failure = runCatching { output.start() }.exceptionOrNull()
             browserHandler.post {
@@ -239,7 +252,20 @@ class DiPlaySessionService : Service() {
         val receiver = synchronized(Companion) {
             runtime ?: BrowserCarPlayRuntime(applicationContext, output).also { runtime = it }
         }
+        if (receiver.isClosing) {
+            if (waitingForReceiver !== receiver) {
+                waitingForReceiver = receiver
+                receiver.close {
+                    synchronized(Companion) { if (runtime === receiver) runtime = null }
+                    waitingForReceiver = null
+                    publishConnectionState()
+                    if (!destroyed) startBrowserReceiver()
+                }
+            }
+            return
+        }
         receiver.onStandbyStateChanged = ::onReceiverStateChanged
+        receiver.onConnectionStateChanged = ::publishConnectionState
         receiver.setTelemetryStartOrigin(automatic = receiverAutomaticStart)
         receiver.start()
         updateBrowserPower()
@@ -256,6 +282,7 @@ class DiPlaySessionService : Service() {
         receiver.close("user_stop") {
             synchronized(Companion) { if (runtime === receiver) runtime = null }
             receiverRetiring = false
+            publishConnectionState()
             // A new Start can arrive before Android destroys this stopped Service. Wait for
             // the old controller's teardown, then restore the latest requested state.
             if (!destroyed && browserRequested && !stopRequested && currentBrowserOutput()?.running == true) {
@@ -281,6 +308,7 @@ class DiPlaySessionService : Service() {
         standbyProbe = false
         idleSince = -1L
         currentBrowserRuntime()?.onStandbyStateChanged = null
+        publishConnectionState()
         reliabilityMonitor?.close()
         reliabilityMonitor = null
         releaseBrowserLocks()
@@ -312,16 +340,52 @@ class DiPlaySessionService : Service() {
     private fun standbyDemand(): Boolean = charging || screenInteractive || browserClientConnected ||
         currentBrowserRuntime()?.sessionActive == true
 
+    private fun claimConnectionState() {
+        check(Looper.myLooper() == Looper.getMainLooper())
+        if (connectionStateClaimed || destroyed) return
+        connectionStateClaimed = true
+        connectionStates.claim(this, connectionObservation())
+    }
+
+    private fun connectionObservation(): BrowserConnectionState {
+        val output = currentBrowserOutput()
+        return BrowserConnectionState(
+            requested = BrowserSessionRecovery.requested(this),
+            serverRunning = output?.running == true,
+            receiver = currentBrowserRuntime()?.connectionState ?: BrowserReceiverState(),
+            browserCount = output?.clientCount ?: 0,
+            videoRendered = output?.hasRenderedVideo == true,
+            outputStatus = output?.status,
+        )
+    }
+
+    private fun publishConnectionState() {
+        if (!connectionStateClaimed) return
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            browserHandler.post { publishConnectionState() }
+            return
+        }
+        if (connectionStates.publish(this, connectionObservation())) reliabilityMonitor?.activityChanged()
+    }
+
+    private fun releaseConnectionState() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            browserHandler.post { releaseConnectionState() }
+            return
+        }
+        connectionStates.release(this, connectionObservation())
+    }
+
     private fun onReceiverStateChanged() {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             browserHandler.post { onReceiverStateChanged() }
             return
         }
-        reliabilityMonitor?.activityChanged()
         // Manual Connect clears the runtime's parked flag before it queues any connection work.
         if (standbyParked && currentBrowserRuntime()?.standbyParked == false) {
             wakeBrowserReceiver("receiver_action")
         } else updateBrowserPower()
+        publishConnectionState()
     }
 
     private fun wakeBrowserReceiver(reason: String, probe: Boolean = false) {
@@ -341,7 +405,7 @@ class DiPlaySessionService : Service() {
         browserHandler.postDelayed(browserMaintenance, BROWSER_MAINTENANCE_MILLIS)
         BrowserReliabilityDiagnostics.record(this, "standby_wake reason=$reason")
         currentBrowserRuntime()?.resumeFromStandby()
-        reliabilityMonitor?.activityChanged()
+        publishConnectionState()
         updateBrowserPower()
     }
 
@@ -391,7 +455,7 @@ class DiPlaySessionService : Service() {
             wifiLockMode = -1
             if (cpuLock?.isHeld == true) cpuLock?.release()
             cpuLock = null
-            reliabilityMonitor?.activityChanged()
+            publishConnectionState()
             BrowserReliabilityDiagnostics.record(this, "standby_enter cpu=false wifi=false")
         }
         if (!accepted) standbyParking = false
@@ -462,6 +526,28 @@ class DiPlaySessionService : Service() {
         }
     }
 
+    private var autoDegradeUsed = false
+
+    /** Severe, sustained queue loss only: step one quality level down and rebuild the receiver once. */
+    private fun onLinkCongestion() {
+        browserHandler.post {
+            if (destroyed || autoDegradeUsed) return@post
+            val quality = AirPlayPersistence.loadBrowserResolutionPercent(this)
+            val newQuality = when {
+                quality > 125 -> 125
+                quality > 100 -> 100
+                else -> quality
+            }
+            if (newQuality != quality) AirPlayPersistence.saveBrowserResolutionPercent(this, newQuality)
+            else if (AirPlayPersistence.loadFps(this) > 30) AirPlayPersistence.saveFps(this, 30)
+            else return@post
+            autoDegradeUsed = true
+            BrowserReliabilityDiagnostics.record(this,
+                "auto_degrade quality=$newQuality fps=${AirPlayPersistence.loadFps(this)} reason=link_congestion")
+            currentBrowserRuntime()?.reconnect()
+        }
+    }
+
     private fun onBrowserClientConnection(connected: Boolean) {
         if (Looper.myLooper() != Looper.getMainLooper()) {
             browserHandler.post { onBrowserClientConnection(connected) }
@@ -472,7 +558,7 @@ class DiPlaySessionService : Service() {
         if (connected) wakeBrowserReceiver("browser")
         updateWifiLock()
         updateBrowserPower()
-        reliabilityMonitor?.activityChanged()
+        publishConnectionState()
     }
 
     /**
@@ -507,14 +593,28 @@ class DiPlaySessionService : Service() {
             BrowserAddressService.pause(this)
             val output = synchronized(Companion) { browser.also { browser = null } }
             browserWorker.execute { output?.close() }
-            val receiver = synchronized(Companion) { runtime.also { runtime = null } }
-            if (receiver != null) receiver.close(if (stopRequested) "user_stop" else "service_stopped")
-            else if (!stopRequested) BrowserTelemetry.sessionEnded(this, "service_stopped")
+            val receiver = currentBrowserRuntime()
+            if (receiver != null) receiver.close(if (stopRequested) "user_stop" else "service_stopped") {
+                // A new Service must wait for the old Bluetooth/listener sockets to close.
+                synchronized(Companion) { if (runtime === receiver) runtime = null }
+                releaseConnectionState()
+            }
+            else {
+                if (!stopRequested) BrowserTelemetry.sessionEnded(this, "service_stopped")
+                releaseConnectionState()
+            }
+            publishConnectionState()
         }
         browserWorker.shutdown()
         super.onDestroy()
     }
     companion object {
+        private val connectionStates = BrowserConnectionStateStore()
+        internal fun currentConnectionState(): BrowserConnectionState = connectionStates.value
+        internal fun observeConnectionState(observer: (BrowserConnectionState) -> Unit): java.io.Closeable {
+            check(Looper.myLooper() == Looper.getMainLooper())
+            return connectionStates.observe(observer)
+        }
         const val ACTION_STOP = "com.shihab.diplay.DISCONNECT"
         const val ACTION_RECONNECT = "com.shihab.diplay.RECONNECT"
         const val ACTION_RECOVER = "com.shihab.diplay.RECOVER"
@@ -581,6 +681,7 @@ internal class BrowserCarPlayMediaSink(
     }
     override fun onVideoCodec(type: Int, codec: VideoCodec) = video(type) { it.onVideoCodec(type, codec) }
     override fun onVideoConfig(type: Int, codecData: ByteArray) = video(type) { it.onVideoConfig(type, codecData) }
+    override fun onVideoConfigRejected(type: Int) = video(type) { it.onVideoConfigRejected(type) }
     override fun onVideoFrame(type: Int, naluBytes: ByteArray) = video(type) { it.onVideoFrame(type, naluBytes) }
     override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) =
         video(type) { it.onVideoFrame(type, naluBytes, senderNanos, arrivalNanos) }

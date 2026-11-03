@@ -57,6 +57,18 @@ class BrowserStreamOutputTest {
         shadowOf(Looper.getMainLooper()).idle()
     }
 
+    @Test fun browserStatusDistinguishesAQuietConfiguredStreamFromAnEndedStream() {
+        output.onScreenStreamActive(110, true)
+        assertFalse(JSONObject(pendingStatus.get()).getBoolean("videoReady"))
+
+        output.onVideoCodec(110, VideoCodec.H264)
+        output.onVideoConfig(110, avcc)
+        assertTrue(JSONObject(pendingStatus.get()).getBoolean("videoReady"))
+
+        output.onScreenStreamActive(110, false)
+        assertFalse(JSONObject(pendingStatus.get()).getBoolean("videoReady"))
+    }
+
     @Test fun transientHevcConfigurationWaitsWithoutSendingAManualReconnectError() {
         output.onVideoCodec(110, VideoCodec.H265)
         advance(2_000)
@@ -116,6 +128,47 @@ class BrowserStreamOutputTest {
 
         assertTrue(failures.isEmpty())
         assertTrue(output.status.startsWith("Direct CarPlay video"))
+    }
+
+    @Test fun unknownConfigurationCanRecoverOnTheSameStreamBeforeItsDeadline() {
+        val configuredAttempts = mutableListOf<Int>()
+        output.onVideoConfigured = configuredAttempts::add
+        output.onVideoConfigRejected(110)
+        advance(2_000)
+        assertTrue(failures.isEmpty())
+        output.onVideoCodec(110, VideoCodec.H264)
+        output.onVideoConfig(110, avcc)
+        advance(10_000)
+        assertTrue(failures.isEmpty())
+        assertEquals(listOf(7), configuredAttempts)
+        assertTrue(output.status.startsWith("Direct CarPlay video"))
+    }
+
+    @Test fun persistentUnknownConfigurationGetsOneBoundedRecovery() {
+        output.onVideoConfigRejected(110)
+        advance(2_000)
+        output.onVideoConfigRejected(110)
+        advance(1_000)
+        assertEquals(listOf(7 to "video_config_unknown"), failures)
+        advance(10_000)
+        assertEquals(1, failures.size)
+    }
+
+    @Test fun configurationAcceptedCallbackCannotEscapeItsAttemptOrStreamLifetime() {
+        val configuredAttempts = mutableListOf<Int>()
+        output.onVideoConfigured = configuredAttempts::add
+        output.onVideoConfig(110, avcc)
+        output.setTelemetryAttempt(8)
+        advance(1)
+        assertTrue(configuredAttempts.isEmpty())
+        output.onVideoConfig(110, avcc)
+        output.onScreenStreamActive(110, false)
+        advance(1)
+        assertTrue(configuredAttempts.isEmpty())
+        output.onVideoConfig(110, avcc)
+        output.close()
+        advance(1)
+        assertTrue(configuredAttempts.isEmpty())
     }
 
     @Test fun codecAnnouncementAloneDoesNotCancelRecoveryBeforeAValidConfiguration() {

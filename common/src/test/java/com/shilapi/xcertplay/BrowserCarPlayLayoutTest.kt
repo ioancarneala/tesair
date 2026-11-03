@@ -10,19 +10,19 @@ class BrowserCarPlayLayoutTest {
     @Test fun defaultQualityPreservesTheWorkingSessionAndItsNativeAreas() {
         val layout = BrowserCarPlayLayout.create(1920, 1080)
         assertEquals(1920, layout.canvasWidth)
-        assertEquals(1440, layout.canvasHeight)
+        assertEquals(1080, layout.canvasHeight)
         assertEquals(0, layout.initialIndex)
         assertEquals(0, layout.currentIndex)
         // Preserve the announced area order and pixel rounding.
         val expected = """
-            1920x1080 1920x1200 1920x1440 1920x960 648x1440 680x1440
-            714x1440 750x1440 786x1440 826x1440 868x1440 910x1440
-            956x1440 1004x1440 1054x1440 1108x1440 1162x1440 1220x1440
-            1282x1440 1346x1440 1414x1440 1484x1440 1558x1440 1636x1440
-            1718x1440 1804x1440 1894x1440 1920x1388 1920x1322 1920x1258
-            1920x1198 1920x1142 1920x1088 1920x1036 1920x986 1920x940
-            1920x894 1920x852 1920x812 1920x772 1920x736 1920x700
-            1920x668 1920x636 1920x606 1920x600
+            1920x1080 1728x1080 1440x1080 1920x960 486x1080 510x1080
+            534x1080 562x1080 590x1080 620x1080 650x1080 682x1080
+            718x1080 752x1080 790x1080 830x1080 872x1080 916x1080
+            962x1080 1010x1080 1060x1080 1112x1080 1168x1080 1228x1080
+            1288x1080 1352x1080 1420x1080 1492x1080 1566x1080 1644x1080
+            1814x1080 1904x1080 1920x1036 1920x986 1920x940 1920x894
+            1920x852 1920x812 1920x772 1920x736 1920x700 1920x668
+            1920x636 1920x606 1920x600
         """.trim().split(Regex("\\s+"))
         assertEquals(expected, layout.areas.map { "${it.width}x${it.height}" })
         assertEquals(layout.areas, BrowserCarPlayLayout.create(1920, 1080, 100).areas)
@@ -34,11 +34,42 @@ class BrowserCarPlayLayoutTest {
         assertEquals(BrowserCarPlayLayout.CanvasSize(2560, 1440), BrowserCarPlayLayout.canvasSize(3840))
     }
 
+    @Test fun teslaViewportUsesItsPixelsAndSavedQualityWithoutTheFullHdFloor() {
+        val native = BrowserCarPlayLayout.create(1182, 920, 100)
+        assertEquals(1182, native.canvasWidth)
+        assertEquals(920, native.canvasHeight)
+        assertEquals(1182, native.currentArea.width)
+        assertEquals(920, native.currentArea.height)
+
+        val sharp = BrowserCarPlayLayout.create(1182, 920, 160)
+        assertEquals(1890, sharp.canvasWidth)
+        assertEquals(1472, sharp.canvasHeight)
+        assertTrue(sharp.canvasWidth.toLong() * sharp.canvasHeight < 2880L * 2160 / 2)
+        assertEquals(aspect(native), aspect(sharp), 0.002)
+        val canvas = sharp.canvasWidth to sharp.canvasHeight
+        for ((width, height) in listOf(1182 to 840, 1182 to 920, 1500 to 920, 1920 to 1080)) {
+            sharp.use(sharp.indexFor(width, height))
+            assertEquals(canvas, sharp.canvasWidth to sharp.canvasHeight)
+            assertTrue(abs(ln(aspect(sharp) / (width.toDouble() / height))) < ln(1.035))
+        }
+    }
+
+    @Test fun aSmallerBrowserRetainsNativePixelsAndLandscapeLayouts() {
+        val layout = BrowserCarPlayLayout.create(1280, 720, 100)
+        assertEquals(1280, layout.canvasWidth)
+        assertEquals(720, layout.canvasHeight)
+        assertEquals(1280, layout.currentArea.width)
+        assertEquals(720, layout.currentArea.height)
+        val portrait = BrowserCarPlayLayout.create(900, 1600, 100)
+        assertTrue(portrait.canvasWidth <= portrait.canvasHeight)
+        assertEquals(900.0 / 1600, aspect(portrait), 0.002)
+    }
+
     @Test fun higherQualityAddsPixelsWithoutChangingTheInitialLayoutShape() {
         val normal = BrowserCarPlayLayout.create(1920, 1080)
         val sharper = BrowserCarPlayLayout.create(1920, 1080, 120)
         assertEquals(2304, sharper.canvasWidth)
-        assertEquals(1728, sharper.canvasHeight)
+        assertEquals(1296, sharper.canvasHeight)
         assertEquals(2304, sharper.currentArea.width)
         assertEquals(1296, sharper.currentArea.height)
         assertEquals(aspect(normal), aspect(sharper), 0.000001)
@@ -47,17 +78,17 @@ class BrowserCarPlayLayoutTest {
     @Test fun lowerQualityReducesTheCanvasAndActiveVideoTogether() {
         val layout = BrowserCarPlayLayout.create(1920, 1080, 50)
         assertEquals(960, layout.canvasWidth)
-        assertEquals(720, layout.canvasHeight)
+        assertEquals(540, layout.canvasHeight)
         assertEquals(960, layout.currentArea.width)
         assertEquals(540, layout.currentArea.height)
     }
 
     @Test fun maximumQualityKeepsBothAxesAtTheSameScaleWithinFourK() {
         val narrow = BrowserCarPlayLayout.create(1920, 1080, 160)
-        assertEquals(2880, narrow.canvasWidth)
-        assertEquals(2160, narrow.canvasHeight)
-        assertEquals(2880, narrow.currentArea.width)
-        assertEquals(1620, narrow.currentArea.height)
+        assertEquals(3072, narrow.canvasWidth)
+        assertEquals(1728, narrow.canvasHeight)
+        assertEquals(3072, narrow.currentArea.width)
+        assertEquals(1728, narrow.currentArea.height)
 
         val wide = BrowserCarPlayLayout.create(2560, 1440, 160)
         assertEquals(3840, wide.canvasWidth)

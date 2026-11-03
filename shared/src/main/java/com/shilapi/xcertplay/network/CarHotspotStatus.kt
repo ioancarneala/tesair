@@ -2,6 +2,7 @@ package com.shilapi.xcertplay.network
 
 import android.content.Context
 import android.content.IntentFilter
+import android.os.Build
 import android.content.Intent
 import android.net.wifi.WifiManager
 
@@ -11,6 +12,36 @@ import android.net.wifi.WifiManager
  * The user can turn it on in car settings or opt into [CarHotspotTethering] after granting permission.
  */
 object CarHotspotStatus {
+    enum class Band { TWO_GHZ, FIVE_GHZ, SIX_GHZ, UNKNOWN }
+
+    /**
+     * Current hotspot band when the firmware exposes it. A null/unknown result means the app
+     * must not claim anything about the band, only show the 5 GHz recommendation.
+     */
+    fun band(context: Context): Band =
+        if (Build.VERSION.SDK_INT < 30) Band.UNKNOWN else band30(context)
+
+    @androidx.annotation.RequiresApi(30)
+    private fun band30(context: Context): Band {
+        val wifi = context.applicationContext.getSystemService(WifiManager::class.java) ?: return Band.UNKNOWN
+        return try {
+            // The public SDK stubs do not expose getSoftApConfiguration/getBand; both exist on
+            // Android 11+ and are readable when the OEM returns the current tethering config.
+            val configuration = WifiManager::class.java
+                .getMethod("getSoftApConfiguration").invoke(wifi) ?: return Band.UNKNOWN
+            val band = configuration.javaClass.getMethod("getBand").invoke(configuration) as? Int
+                ?: return Band.UNKNOWN
+            bandFor(band)
+        } catch (_: Exception) { Band.UNKNOWN }
+    }
+
+    internal fun bandFor(band: Int): Band = when (band) {
+        1 -> Band.TWO_GHZ
+        2 -> Band.FIVE_GHZ
+        3 -> Band.SIX_GHZ
+        else -> Band.UNKNOWN
+    }
+
     private const val ACTION_WIFI_AP_STATE_CHANGED = "android.net.wifi.WIFI_AP_STATE_CHANGED"
     private const val EXTRA_WIFI_AP_STATE = "wifi_state"
     private const val EXTRA_WIFI_AP_MODE = "wifi_ap_mode"

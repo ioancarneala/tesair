@@ -1,12 +1,25 @@
-# Add project specific R8 rules here.
-# AGP will combine all keep rule files in src/main/keepRules to pass to R8
-#
-# For more details, see
-#   https://d.android.com/r/tools/r8/keep-rules
+# Adopt shrinking separately from code rewriting and renaming. This keeps release
+# diagnostics readable and limits the first optimized build to removing dead code.
+-dontoptimize
+-dontobfuscate
 
-# If your project uses WebView with JS, uncomment the following
-# and specify the fully qualified class name to the JavaScript interface
-# class:
-#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
-#   public *;
-#}
+# Crypto providers resolve implementations by class name as well as direct calls.
+-keep class org.bouncycastle.** { *; }
+# Bouncy Castle also ships a desktop LDAP certificate-store provider. Android has
+# no JNDI and TesAir never selects this provider; other missing classes stay errors.
+-dontwarn javax.naming.**
+
+# JNI entry points must retain the names exported by the bundled native libraries.
+-keepclasseswithmembernames,includedescriptorclasses class * {
+    native <methods>;
+}
+
+# linux_i2c_jni.c constructs this exception directly through JNI.
+-keep class com.shilapi.xcertplay.transport.LinuxI2cNativeException {
+    <init>(int, java.lang.String);
+}
+
+# Shell helpers are launched by app_process, outside the Android manifest graph.
+-keepclasseswithmembers class com.shilapi.xcertplay.** {
+    public static void main(java.lang.String[]);
+}

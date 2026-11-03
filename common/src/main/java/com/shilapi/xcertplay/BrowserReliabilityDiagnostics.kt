@@ -61,7 +61,7 @@ internal object BrowserReliabilityDiagnostics {
         val bluetooth = runCatching {
             context.getSystemService(android.bluetooth.BluetoothManager::class.java)?.adapter?.isEnabled
         }.getOrNull()
-        val output = DiPlaySessionService.currentBrowserOutput()
+        val connection = DiPlaySessionService.currentConnectionState()
         "system screenOn=${power?.isInteractive} idle=${power?.isDeviceIdleMode} " +
             "powerSave=${power?.isPowerSaveMode} batteryExempt=${power?.isIgnoringBatteryOptimizations(context.packageName)} " +
             "thermal=${if (Build.VERSION.SDK_INT >= 29) power?.currentThermalStatus else -1} " +
@@ -72,10 +72,11 @@ internal object BrowserReliabilityDiagnostics {
             "uplink=${network != null} validated=${network?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true} " +
             "wifi=${network?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true} " +
             "cellular=${network?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true} " +
-            "bluetooth=$bluetooth receiverRequested=${BrowserSessionRecovery.requested(context)} " +
-            "route=${route.phase} aliasPresent=$aliasPresent server=${output?.running == true} " +
-            "viewers=${output?.clientCount ?: 0} session=${CarPlayBackgroundSession.hasSession()} " +
-            "iphoneActive=${CarPlayBackgroundSession.active} videoRendered=${output?.hasRenderedVideo == true}"
+            "bluetooth=$bluetooth receiverRequested=${connection.requested} " +
+            "route=${route.phase} aliasPresent=$aliasPresent server=${connection.serverRunning} " +
+            "viewers=${connection.browserCount} session=${connection.sessionRunning} " +
+            "iphoneActive=${connection.iphoneActive} videoRendered=${connection.videoRendered} " +
+            "receiverPhase=${connection.receiver.phase} retirementDelayed=${connection.receiver.retirementDelayed}"
     }.getOrElse { "system unavailable=${it.javaClass.simpleName}" }
 
     fun report(context: Context): String {
@@ -86,9 +87,8 @@ internal object BrowserReliabilityDiagnostics {
 
     fun telemetrySample(context: Context) {
         if (!BrowserTelemetry.enabled(context)) return
-        val output = DiPlaySessionService.currentBrowserOutput()
-        output?.recordTlsDiagnostics()
-        val active = CarPlayBackgroundSession.active || (output?.clientCount ?: 0) > 0
+        val connection = DiPlaySessionService.currentConnectionState()
+        DiPlaySessionService.currentBrowserOutput()?.recordTlsDiagnostics()
         runCatching {
             val power = context.getSystemService(PowerManager::class.java)
             val memory = ActivityManager.MemoryInfo()
@@ -108,12 +108,12 @@ internal object BrowserReliabilityDiagnostics {
                 "validated" to (network?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true),
                 "wifi" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true),
                 "cellular" to (network?.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) == true),
-                "receiverRunning" to (output?.running == true), "browserCount" to (output?.clientCount ?: 0),
+                "receiverRunning" to connection.serverRunning, "browserCount" to connection.browserCount,
                 // This confirms a frame in the current media generation, not continuous live playback.
-                "iphoneActive" to CarPlayBackgroundSession.active, "videoRendered" to (output?.hasRenderedVideo == true),
+                "iphoneActive" to connection.iphoneActive, "videoRendered" to connection.videoRendered,
             ))
             // Operational changes flush in the collector; use the existing tick for other pending reports during use.
-            if (active) BrowserTelemetry.pump(context)
+            if (connection.active) BrowserTelemetry.pump(context)
         }
     }
 }
@@ -126,7 +126,8 @@ internal class BrowserReliabilityMonitor(
     },
     private val elapsed: () -> Long = SystemClock::elapsedRealtime,
     private val activity: () -> Activity = {
-        Activity(CarPlayBackgroundSession.active, (DiPlaySessionService.currentBrowserOutput()?.clientCount ?: 0) > 0)
+        val state = DiPlaySessionService.currentConnectionState()
+        Activity(state.iphoneActive, state.browserCount > 0, state.receiver.phase, state.receiver.retirementDelayed)
     },
     private val report: (Context) -> Unit = { app ->
         BrowserReliabilityDiagnostics.record(app, BrowserReliabilityDiagnostics.snapshot(app))
@@ -135,7 +136,8 @@ internal class BrowserReliabilityMonitor(
     private val pollScreenOff: (Context) -> Unit = BrowserScreenOffCheck::poll,
     private val stopScreenOff: () -> Unit = BrowserScreenOffCheck::stop,
 ) : Closeable {
-    internal data class Activity(val iphone: Boolean, val browser: Boolean) {
+    internal data class Activity(val iphone: Boolean, val browser: Boolean,
+        val receiverPhase: BrowserReceiverState.Phase? = null, val retirementDelayed: Boolean = false) {
         val active: Boolean get() = iphone || browser
         val streaming: Boolean get() = iphone && browser
     }

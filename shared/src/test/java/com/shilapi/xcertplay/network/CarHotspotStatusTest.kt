@@ -15,6 +15,14 @@ class CarHotspotStatusTest {
         mode?.let { putExtra("wifi_ap_mode", it) }
     }
 
+    @Test fun mapsSoftApBandsWithoutGuessing() {
+        assertEquals(CarHotspotStatus.Band.TWO_GHZ, CarHotspotStatus.bandFor(1))
+        assertEquals(CarHotspotStatus.Band.FIVE_GHZ, CarHotspotStatus.bandFor(2))
+        assertEquals(CarHotspotStatus.Band.SIX_GHZ, CarHotspotStatus.bandFor(3))
+        assertEquals(CarHotspotStatus.Band.UNKNOWN, CarHotspotStatus.bandFor(0))
+        assertEquals(CarHotspotStatus.Band.UNKNOWN, CarHotspotStatus.bandFor(4))
+    }
+
     @Test fun hiddenGettersStillUseAValidStickyTetheredState() {
         assertEquals(true, CarHotspotStatus.read({ throw SecurityException() }, { throw NoSuchMethodException() }, { sticky(13, 1) }))
         assertEquals(false, CarHotspotStatus.read({ null }, { null }, { sticky(11, 1) }))

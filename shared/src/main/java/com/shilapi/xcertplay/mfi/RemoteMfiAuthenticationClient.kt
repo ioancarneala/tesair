@@ -38,12 +38,19 @@ class RemoteMfiAuthenticationClient(
 
     init {
         require(baseAddress.isNotEmpty()) { "Remote MFI server address must not be blank" }
-        require(baseAddress.startsWith("http://") || baseAddress.startsWith("https://")) {
-            "Remote MFI server address must use http:// or https://"
+        require(secureOrLoopback(baseAddress)) {
+            "Remote MFI server address must use https:// (loopback http is allowed for development)"
         }
         require(connectTimeoutMillis > 0) { "connectTimeoutMillis must be positive" }
         require(readTimeoutMillis > 0) { "readTimeoutMillis must be positive" }
         require(maximumAttempts > 0) { "maximumAttempts must be positive" }
+    }
+
+    private fun secureOrLoopback(address: String): Boolean {
+        if (address.startsWith("https://")) return true
+        if (!address.startsWith("http://")) return false
+        val host = address.removePrefix("http://")
+        return host.startsWith("127.") || host.startsWith("localhost") || host.startsWith("[::1]")
     }
 
     /** Resets the remote authentication session and invalidates the cached certificate response. */

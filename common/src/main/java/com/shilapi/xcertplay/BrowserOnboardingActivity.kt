@@ -350,6 +350,11 @@ class BrowserOnboardingActivity : ComponentActivity() {
             return
         }
         action(R.string.onboarding_network_settings) { openHotspotSettings() }
+        when (CarHotspotStatus.band(this)) {
+            CarHotspotStatus.Band.FIVE_GHZ -> label(getString(R.string.onboarding_hotspot_5ghz_ok), 14)
+            CarHotspotStatus.Band.TWO_GHZ -> label(getString(R.string.onboarding_hotspot_5ghz_hint), 14)
+            else -> label(getString(R.string.onboarding_hotspot_band_unknown), 13)
+        }
         val name = input(R.string.onboarding_network_name, false).apply {
             setText(draft.name ?: AirPlayPersistence.loadManualHotspotSsid(this@BrowserOnboardingActivity))
             addTextChangedListener(onTextChanged { draft.name = it })

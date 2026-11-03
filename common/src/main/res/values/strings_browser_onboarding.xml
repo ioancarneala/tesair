@@ -22,6 +22,9 @@
     <string name="onboarding_network_password">Hotspot password</string>
     <string name="onboarding_network_password_hint">Leave empty only for an open hotspot</string>
     <string name="onboarding_network_settings">Open hotspot settings</string>
+    <string name="onboarding_hotspot_5ghz_ok">5 GHz hotspot detected — best performance for 60 fps video.</string>
+    <string name="onboarding_hotspot_5ghz_hint">For the best performance, set the hotspot band to 5 GHz. A 2.4 GHz hotspot can make 60 fps video stutter.</string>
+    <string name="onboarding_hotspot_band_unknown">Tip: choose a 5 GHz hotspot for the smoothest video.</string>
     <string name="onboarding_network_hint">Turn the hotspot on and disable automatic shutoff. Keep mobile data on for internet in your Tesla.</string>
     <string name="onboarding_network_save">Save and continue</string>
     <string name="onboarding_network_saved">Details saved. Keep the hotspot on.</string>

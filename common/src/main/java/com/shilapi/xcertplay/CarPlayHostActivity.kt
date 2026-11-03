@@ -3359,9 +3359,10 @@ class CarPlayHostActivity : ComponentActivity() {
                 getString(R.string.i2c_device_path_is_required)
             mfiTarget == MfiTarget.REMOTE && remoteMfiServer.isBlank() ->
                 getString(R.string.remote_server_address_is_required)
-            mfiTarget == MfiTarget.REMOTE &&
-                !remoteMfiServer.trim().startsWith("http://") &&
-                !remoteMfiServer.trim().startsWith("https://") ->
+            mfiTarget == MfiTarget.REMOTE && !remoteMfiServer.trim().startsWith("https://") &&
+                !remoteMfiServer.trim().startsWith("http://127.") &&
+                !remoteMfiServer.trim().startsWith("http://localhost") &&
+                !remoteMfiServer.trim().startsWith("http://[::1]") ->
                 getString(R.string.remote_server_address_must_start_with_http_or_https)
             '\u0000' in mfiI2cPath -> getString(R.string.i2c_device_path_contains_u_0000)
             '\u0000' in remoteMfiServer -> getString(R.string.remote_server_address_contains_u_0000)

@@ -23,6 +23,7 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
     interface Listener {
         fun onCodec(codec: VideoCodec) {}
         fun onConfig(codecData: ByteArray) {}
+        fun onConfigRejected() {}
         fun onFrame(naluBytes: ByteArray) {}
         /**
          * A frame with the iPhone's frame time ([senderNanos], from the header) and when its body finished
@@ -119,8 +120,9 @@ class ScreenStream(private val key: ByteArray, private val onDiagnostic: (String
                 val (codec, codecData) = try {
                     ScreenCodec.detectConfig(body)
                 } catch (error: IllegalArgumentException) {
-                    runCatching { onDiagnostic("Video: config codec=unknown configBytes=${body.size} result=rejected") }
-                    throw error
+                    runCatching { onDiagnostic("Video: config codec=unknown configBytes=${body.size} head=${body.hexPrefix(24)} result=rejected") }
+                    listener.onConfigRejected()
+                    return
                 }
                 val diagnostic = "Video: config codec=${codec.name.lowercase()} " +
                     "configBytes=${body.size} dataBytes=${codecData.size} result=accepted"
@@ -236,15 +238,71 @@ object ScreenCodec {
             if (codec != null) {
                 require(selected == null) { "Ambiguous video configuration" }
                 val data = payload.copyOfRange(cursor + headerSize, end)
-                require(if (codec == VideoCodec.H264) validAvcConfig(data) else validHevcConfig(data)) {
-                    "Invalid video configuration"
-                }
+                // AVC is parsed locally, so reject malformed avcC now. HEVC records vary between
+                // iOS releases; the relay parses them leniently and falls back to AVC on failure.
+                if (codec == VideoCodec.H264) require(validAvcConfig(data)) { "Invalid video configuration" }
                 selected = codec to data
             }
             cursor = end
         }
-        require(cursor == payload.size && selected != null) { "Unknown video configuration" }
-        return selected
+        if (selected != null) {
+            // A top-level codec box must consume the whole record; trailing or extra boxes
+            // are malformed, not an invitation to guess.
+            require(cursor == payload.size) { "Unknown video configuration" }
+            return selected
+        }
+        // Sample entries (hev1/hvc1) wrap the codec box behind their own header.
+        findNestedBox(payload, "hvcC", VideoCodec.H265)?.let { return it }
+        if (hasHevcParameterSet(payload)) return VideoCodec.H265 to payload
+        throw IllegalArgumentException("Unknown video configuration")
+    }
+
+    private fun findNestedBox(payload: ByteArray, type: String, codec: VideoCodec): Pair<VideoCodec, ByteArray>? {
+        var from = 4
+        while (from + 4 <= payload.size) {
+            var at = -1
+            for (index in from..payload.size - 4) {
+                if (payload[index].toInt() == type[0].code && payload[index + 1].toInt() == type[1].code &&
+                    payload[index + 2].toInt() == type[2].code && payload[index + 3].toInt() == type[3].code) { at = index; break }
+            }
+            if (at < 4) return null
+            val size = readU32Be(payload, at - 4).toLong() and 0xffff_ffffL
+            if (size >= 8 && at - 4 + size <= payload.size) {
+                val data = payload.copyOfRange(at + 4, (at - 4 + size).toInt())
+                if ((codec == VideoCodec.H264 && validAvcConfig(data)) ||
+                    (codec == VideoCodec.H265 && validHevcConfig(data))) return codec to data
+            }
+            from = at + 4
+        }
+        return null
+    }
+
+    /** Parameter sets delivered directly (Annex B or four-byte lengths) instead of an hvcC box. */
+    private fun hasHevcParameterSet(payload: ByteArray): Boolean {
+        var found = false
+        var offset = 0
+        while (offset + 5 <= payload.size) {
+            val start = when {
+                payload[offset].toInt() == 0 && payload[offset + 1].toInt() == 0 && payload[offset + 2].toInt() == 1 -> offset + 3
+                offset + 4 <= payload.size && payload[offset].toInt() == 0 && payload[offset + 1].toInt() == 0 &&
+                    payload[offset + 2].toInt() == 0 && payload[offset + 3].toInt() == 1 -> offset + 4
+                else -> { offset++; continue }
+            }
+            val type = (payload[start].toInt() ushr 1) and 63
+            if (type in 32..34) found = true
+            offset = start + 2
+        }
+        if (found) return true
+        // Four-byte length prefixes without start codes.
+        offset = 0
+        while (offset + 5 <= payload.size) {
+            val length = readU32Be(payload, offset)
+            if (length < 2 || offset + 4 + length > payload.size) return false
+            val type = (payload[offset + 4].toInt() ushr 1) and 63
+            if (type in 32..34) return true
+            offset += 4 + length
+        }
+        return false
     }
 
     private fun validAvcConfig(data: ByteArray): Boolean {

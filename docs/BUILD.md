@@ -33,6 +33,9 @@ trusted HTTPS requires separately supplied runtime provisioning.
 python3 -m unittest discover -s tests -p 'test_*.py'
 python3 scripts/check_public_tree.py
 node --test tests/browser-player.test.cjs tests/browser-telemetry.test.cjs
+npm ci --prefix tests/browser-integration
+npm exec --prefix tests/browser-integration -- playwright install --with-deps chromium
+node --test tests/browser-integration/player.integration.test.cjs
 python3 scripts/verify-browser-manifests.py \
   --debug mobile/build/intermediates/merged_manifests/debug/processDebugManifest/AndroidManifest.xml \
   --release mobile/build/intermediates/merged_manifests/release/processReleaseManifest/AndroidManifest.xml
@@ -42,6 +45,11 @@ Keep changes focused, add regression coverage for behaviour changes, and describ
 what you tested in your pull request. Never commit credentials, build outputs or
 device reports. The source guard checks tracked and untracked files; generated
 build directories are excluded unless tracked.
+
+The real-browser test uses a synthetic H.264 fixture and localhost HTTPS/WebSocket
+server. Chromium must decode and acknowledge actual frames, survive a short main-thread
+pause, and recover after control-channel congestion. Playwright and `ws` are pinned
+development-only tools; they are not packaged in the Android app.
 
 ## Standby verification
 
@@ -59,12 +67,42 @@ future probes. Restore any simulated battery/Doze state after ADB tests.
 
 ## Video and HTTPS recovery
 
-Video configuration records are validated before selecting AVC or HEVC. Invalid records
-close the screen transport for automatic recovery. A supported H.264 configuration may
-replace a temporary unsupported configuration within three seconds; persistent format
+Video configuration records are validated before selecting AVC or HEVC. Unknown records
+leave the transport open for a later valid configuration. A supported H.264 configuration
+may replace a temporary unsupported configuration within three seconds; persistent format
 failures use the normal receiver retry policy without requiring a manual reconnect.
+Accepting valid video cancels a pending format retry. Decoder memory limits and multi-second
+liveness checks bound stalled playback without resetting healthy video on short delays.
+Receiver replacement waits asynchronously for the old controller and video codecs to finish
+closing; an elapsed teardown timeout does not permit overlapping receiver instances.
+Quiet video retains the last image and asks for a fresh frame without resetting the decoder.
+Status messages explicitly identify an ended video stream so a real disconnect still clears it.
+Keyframe probes on startup, quiet video and server-requested recovery do not discard an
+already queued fresh keyframe. Only a browser decoder reset invalidates its server credits.
+Screen delivery and teardown belong to the current AirPlay session for each screen type;
+an older session cannot reset or feed video into its replacement.
+The session canvas derives from the initial browser viewport and saved quality setting,
+with landscape room for native layout changes and the existing encoded-size limits.
+Small viewports no longer inherit a 1920x1440 minimum before quality scaling.
+Presentation coalesces the newest decoded frame at the next animation callback; a single
+50 ms deadline also permits a real draw when a visible browser postpones that callback.
+Only a completed draw releases frame credits. Local timing includes decoded-output-to-draw
+waiting time without adding a reporting interval.
+Outgoing browser controls have a bounded socket backlog: replaceable movement is coalesced;
+an undeliverable ordered control closes the connection so a stale gesture cannot remain held.
+The service publishes one connection snapshot for the dashboard and reliability monitor.
+Receiver retirement stays visible until cleanup and all controller workers have stopped.
+
+Telemetry prioritizes recent failures and connection state over routine offline samples,
+protects onboarding milestones during queue eviction, and samples repeated automatic attempts.
+HTTP 429/503 `Retry-After` deadlines persist across process restarts. Reports remain optional;
+the existing consent, local retention, and deletion behavior still apply.
 
 Automatic diagnostic reports include public HTTPS identity validity and sync outcomes.
+Periodic snapshots keep their small journal tails; an explicit diagnostic export includes
+the retained bounded journals so an incident is not lost between the sampled tails.
+AirPlay event-channel closure records a reason, elapsed time and exception class only;
+exception messages and protocol payloads are excluded from that diagnostic.
 Opted-in telemetry reports the same state using existing diagnostic events, without
 private keys, certificate contents, or download credentials. A failed renewal keeps the
 working identity. On Android distributions such as Tesla Android, check system time,
@@ -75,6 +113,10 @@ to the hardware.
 
 Release application ID: `co.tesair.app`. The version and version code are defined in
 [`mobile/build.gradle.kts`](../mobile/build.gradle.kts).
+
+Release builds use R8 to remove unreachable classes. Optimization and renaming remain
+disabled for this incremental adoption; JNI names and crypto providers are retained.
+Verify the signed release on a device as well as running the source-only tests.
 
 ### Release checklist
 

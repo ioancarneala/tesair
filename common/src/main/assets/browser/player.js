@@ -36,24 +36,50 @@
     if (!Number.isSafeInteger(timestamp)) throw new Error('Invalid video timestamp');
     return { type: view.getUint8(0) ? 'key' : 'delta', timestamp, data: new Uint8Array(buffer, 9) };
   }
-  function retryDelay(attempt) { return Math.min(10000, 500 * Math.pow(2, Math.max(0, Math.min(5, attempt - 1)))); }
+  // A dropped socket is usually transient: retry at once, then back off to ten seconds.
+  function probeHevc() {
+    if (typeof root.VideoDecoder !== 'function' || typeof root.VideoDecoder.isConfigSupported !== 'function')
+      return Promise.resolve(false);
+    // Levels differ per Tesla hardware; accept any profile/level the browser can configure.
+    const candidates = ['hvc1.1.6.L123.B0', 'hvc1.1.6.L93.B0', 'hev1.1.6.L123.B0', 'hev1.1.6.L93.B0'];
+    try {
+      return Promise.all(candidates.map(codec =>
+        root.VideoDecoder.isConfigSupported({codec, codedWidth: 1920, codedHeight: 1080})
+          .then(result => result.supported === true).catch(() => false)))
+        .then(results => results.some(Boolean)).catch(() => false);
+    } catch (_) { return Promise.resolve(false); }
+  }
+  function retryDelay(attempt) {
+    if (attempt <= 1) return 0;
+    return Math.min(10000, 250 * Math.pow(2, Math.max(0, Math.min(6, attempt - 2))));
+  }
   if (typeof module !== 'undefined') module.exports = { pointInVideo, parseViewArea, displayViewport, renderViewport, parsePacket, retryDelay };
   if (!root.document) return;
   const $ = id => document.getElementById(id);
-  const canvas = $('screen'), context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+  const canvas = $('screen');
+  const pixelProbe = /(?:^|[?&])probe=1(?:&|$)/.test((root.location && root.location.search) || '');
+  // A canvas with a context cannot be transferred to the draw worker, so create it lazily.
+  let context = null;
+  function localContext() {
+    if (!context) context = canvas.getContext('2d', { alpha: false, desynchronized: true });
+    return context;
+  }
   let socket, decoder, config, needKey = true, reconnectTimer, reconnectCount = 0, connected = false;
   let lastFrame = 0, lastPacket = 0, lastServerMessage = 0, recoveryAt = -Infinity;
   let displayTimer, keyframeTimer, lastDisplay = '', decodeError = '';
-  let sessionRequest, connectionAttempt = 0, socketTimer, leaving = false;
+  let sessionRequest, connectionAttempt = 0, socketTimer, leaving = false, sessionReady = false;
+  let hevcSupported = false, hevcProbed = false;
   let receivedVideo = false, recoveryRequested = false, unsupportedVideo = false;
   let reportedPlaybackProblem = false;
   let reportNextDraw = false;
   let waitingForVideo = false, pendingDiagnostic = null;
   let viewArea = null, pendingViewArea = null;
   const frameArrivals = new Map();
-  const MAX_PENDING_FRAMES = 12, MAX_PENDING_BYTES = 8 * 1024 * 1024, MAX_PENDING_AGE_MS = 150, STARTUP_DECODE_AGE_MS = 1000;
-  let decoderHasOutput = false, decodeTimer = null, pendingEncodedBytes = 0, pendingFrame = null, renderHandle = null, renderEpoch = 0, renderSizeDirty = true;
-  let timingSamples = 0, timingDecodeSamples = 0, decodeTotal = 0, decodeMax = 0, drawTotal = 0, drawMax = 0, timingReportedAt = 0;
+  const MAX_PENDING_FRAMES = 12, MAX_PENDING_BYTES = 8 * 1024 * 1024, MAX_CONTROL_BUFFER_BYTES = 16 * 1024;
+  let pendingEncodedBytes = 0, pendingFrame = null, renderHandle = null, renderTimer = null, renderEpoch = 0, renderJob = 0, renderSizeDirty = true;
+  let canvasPixels = null, drawWorker = null, drawInFlight = false, workerFailed = false;
+  let timingSamples = 0, timingDecodeSamples = 0, decodeTotal = 0, decodeMax = 0, drawTotal = 0, drawMax = 0,
+    presentWaitTotal = 0, presentWaitMax = 0, timingReportedAt = 0, timingReceived = 0, timingDrawn = 0;
   let metricReceived = 0, metricDecoded = 0, metricDrawn = 0, metricDropped = 0, metricStartedAt = 0, metricQueueMax = 0;
   let metricDecodeTotal = 0, metricDecodeMax = 0, metricDecodeSamples = 0, requestedFps = 0;
   function telemetry(name, attributes = {}) {
@@ -67,7 +93,21 @@
     reportedPlaybackProblem = true;
     telemetry('browser_error', {...videoContext(), ...attributes, reason, result: 'failed'});
   }
-  function send(message) { if (socket && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message)); }
+  function send(message) {
+    if (!socket || socket.readyState !== WebSocket.OPEN) return false;
+    if (socket.bufferedAmount >= MAX_CONTROL_BUFFER_BYTES) {
+      if (message.type === 'diagnostic' || (message.type === 'touch' && message.action === 'move')) return false;
+      failSend('control_backpressure'); return false;
+    }
+    try { socket.send(JSON.stringify(message)); return true; }
+    catch (_) { failSend('socket_error'); return false; }
+  }
+  function failSend(reason) {
+    playbackProblem(reason);
+    // Do not queue a release behind stale input. Closing also cancels the server's contact.
+    closeSocket();
+    if (connected) reconnect('Connection interrupted. Reconnecting automatically.');
+  }
   function diagnostic(event, closeCode = 0, timings = {}) {
     const now = performance.now();
     const message = {type: 'diagnostic', event, frameAgeMs: Math.round(now - lastFrame),
@@ -81,9 +121,9 @@
     else if (event === 'page_exit') telemetry('browser_disconnected', {reason: 'page_exit', result: 'normal'});
   }
   function resetVideoTiming() {
-    clearTimeout(decodeTimer); decodeTimer = null;
     frameArrivals.clear(); pendingEncodedBytes = 0;
-    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
+    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = presentWaitTotal = presentWaitMax = 0;
+    timingReceived = timingDrawn = 0;
     timingReportedAt = performance.now();
   }
   function reportPerformance(now, reason = 'interval') {
@@ -103,8 +143,12 @@
     if (!timingSamples || now - timingReportedAt < 5000) return;
     diagnostic('latency', 0, {samples: timingSamples, decodeAvgUs: Math.round(decodeTotal * 1000 / Math.max(1, timingDecodeSamples)),
       decodeMaxUs: Math.round(decodeMax * 1000), drawAvgUs: Math.round(drawTotal * 1000 / timingSamples),
-      drawMaxUs: Math.round(drawMax * 1000)});
-    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = 0;
+      drawMaxUs: Math.round(drawMax * 1000), presentWaitAvgUs: Math.round(presentWaitTotal * 1000 / timingSamples),
+      presentWaitMaxUs: Math.round(presentWaitMax * 1000), framesReceived: timingReceived,
+      framesDrawn: timingDrawn, windowMs: Math.round(now - timingReportedAt),
+      requestedFps: requestedFps, codec: config ? config.codec : ''});
+    timingSamples = timingDecodeSamples = decodeTotal = decodeMax = drawTotal = drawMax = presentWaitTotal = presentWaitMax = 0;
+    timingReceived = timingDrawn = 0;
     timingReportedAt = now;
     if (now - metricStartedAt >= 30000) reportPerformance(now);
   }
@@ -126,6 +170,10 @@
   function scheduleDisplay() { renderSizeDirty = true; clearGesture(); clearTimeout(displayTimer); displayTimer = setTimeout(displaySize, 200); }
   function decoderFailure(error) {
     diagnostic(error && error.name === 'NotSupportedError' ? 'decoder_unsupported' : 'decoder_error');
+    // Tell the relay before reconnecting so its next session is AVC instead of looping.
+    if (config && /^(hvc1|hev1)/i.test(config.codec) && socket && socket.readyState === WebSocket.OPEN)
+      send({type: 'capabilities', hevc: false});
+    closeDecoder();
     if (error && error.name === 'NotSupportedError') {
       unsupportedVideo = true;
       reconnect('This browser cannot decode the CarPlay video format. Update the browser or use a supported browser, then select Try again.');
@@ -135,98 +183,154 @@
     decodeError = 'This browser could not decode the video. The connection will restart automatically.';
     reconnect(decodeError);
   }
-  function discardPresentation() {
-    renderEpoch++;
+  function cancelPresentationSchedule() {
     if (renderHandle != null) {
       if (typeof root.cancelAnimationFrame === 'function') root.cancelAnimationFrame(renderHandle);
       else clearTimeout(renderHandle);
       renderHandle = null;
     }
+    if (renderTimer != null) { clearTimeout(renderTimer); renderTimer = null; }
+  }
+  function discardPresentation() {
+    renderEpoch++; renderJob++;
+    cancelPresentationSchedule();
+    if (drawWorker) drawWorker.postMessage({type: 'epoch', epoch: renderEpoch});
     if (pendingFrame) { pendingFrame.frame.close(); pendingFrame = null; metricDropped++; }
   }
-  function presentFrame(epoch) {
-    if (epoch !== renderEpoch) return;
-    renderHandle = null;
+  /** Shared by the local canvas and the off-thread draw worker. */
+  let probeReported = false;
+  function finishPresentation(pts, drawMs, presentWaitMs, epoch, probe) {
+    if (epoch !== renderEpoch || document.hidden) return;
+    clearTimeout(keyframeTimer); keyframeTimer = null;
+    metricDrawn++; timingDrawn++; timingSamples++; drawTotal += drawMs; drawMax = Math.max(drawMax, drawMs);
+    presentWaitTotal += presentWaitMs; presentWaitMax = Math.max(presentWaitMax, presentWaitMs);
+    const reportFrame = !receivedVideo || reportedPlaybackProblem || reportNextDraw;
+    const reportSource = reportedPlaybackProblem ? 'recovery' : 'first_draw', resumed = waitingForVideo;
+    // Decode credits were already released; this only confirms that a picture reached the canvas.
+    send({type: 'presented', pts});
+    if (pixelProbe && probe && !probeReported) {
+      probeReported = true;
+      send({type: 'draw_probe', sample: probe.sample === true, width: probe.width | 0, height: probe.height | 0});
+    }
+    reportedPlaybackProblem = reportNextDraw = false;
+    waitingForVideo = false;
+    lastFrame = performance.now(); receivedVideo = true; recoveryRequested = false;
+    canvas.hidden = false; $('panel').hidden = true; document.body.classList.add('playing'); reconnectCount = 0; decodeError = '';
+    if (reportFrame) telemetry('browser_first_frame', {
+      ...videoContext(), source: reportSource, sampleDecoded: true,
+      width: config.codedWidth, height: config.codedHeight});
+    if (resumed) diagnostic('video_resumed');
+  }
+  function presentFrame(epoch, job) {
+    if (epoch !== renderEpoch || job !== renderJob) return;
+    renderJob++;
+    cancelPresentationSchedule();
     const pending = pendingFrame; pendingFrame = null;
     if (!pending) return;
     const frame = pending.frame;
+    let transferred = false;
     try {
       if (document.hidden || pending.decoder !== decoder || decoder.state !== 'configured') return;
       const area = sourceArea();
-      if (renderSizeDirty) {
+      if (renderSizeDirty || !canvasPixels) {
         const bounds = $('stage').getBoundingClientRect();
         const size = renderViewport(bounds.width, bounds.height, root.devicePixelRatio || 1, area.width, area.height);
-        if (size) {
-          // Resize only immediately before a draw: changing either attribute clears the canvas.
-          if (canvas.width !== size.width) canvas.width = size.width;
-          if (canvas.height !== size.height) canvas.height = size.height;
-          renderSizeDirty = false;
-        }
+        if (size) { canvasPixels = size; renderSizeDirty = false; }
       }
+      if (!canvasPixels) return;
+      if (drawWorker) {
+        // One draw in flight: a slow GPU must not accumulate VideoFrames in the worker queue.
+        if (drawInFlight) { metricDropped++; return; }
+        drawInFlight = true;
+        drawWorker.postMessage({type: 'draw', frame, pts: frame.timestamp, epoch, area,
+          width: canvasPixels.width, height: canvasPixels.height,
+          outputAt: pending.outputAt, probe: pixelProbe}, [frame]);
+        transferred = true;
+        return;
+      }
+      if (canvas.width !== canvasPixels.width) canvas.width = canvasPixels.width;
+      if (canvas.height !== canvasPixels.height) canvas.height = canvasPixels.height;
       const drawAt = performance.now();
-      context.drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
+      const presentWaitMs = Math.max(0, drawAt - pending.outputAt);
+      localContext().drawImage(frame, area.x, area.y, area.width, area.height, 0, 0, canvas.width, canvas.height);
       const drawMs = Math.max(0, performance.now() - drawAt);
-      clearTimeout(keyframeTimer); keyframeTimer = null;
-      metricDrawn++; timingSamples++; drawTotal += drawMs; drawMax = Math.max(drawMax, drawMs);
-      if (!receivedVideo || reportedPlaybackProblem || reportNextDraw) telemetry('browser_first_frame', {
-        ...videoContext(), source: reportedPlaybackProblem ? 'recovery' : 'first_draw', sampleDecoded: true,
-        width: frame.displayWidth || config.codedWidth, height: frame.displayHeight || config.codedHeight});
-      reportedPlaybackProblem = reportNextDraw = false;
-      // ACK is cumulative: drawing the newest frame also releases superseded frame credits.
-      // It confirms submission, never physical display presentation or merely successful decoding.
-      send({type: 'ack', pts: frame.timestamp});
-      if (waitingForVideo) diagnostic('video_resumed');
-      waitingForVideo = false;
-      lastFrame = performance.now(); receivedVideo = true; recoveryRequested = false;
-      canvas.hidden = false; $('panel').hidden = true; document.body.classList.add('playing'); reconnectCount = 0; decodeError = '';
+      finishPresentation(frame.timestamp, drawMs, presentWaitMs, epoch, null);
     } catch (error) { decoderFailure(error); }
-    finally { frame.close(); }
+    finally { if (!transferred) frame.close(); }
   }
-  function queuePresentation(frame, next) {
+  let hevcProbe = probeHevc();
+  function reloadAfterWorkerFailure() {
+    if (workerFailed) return;
+    workerFailed = true;
+    drawWorker = null;
+    try {
+      if (root.sessionStorage && !root.sessionStorage.getItem('tesairWorkerReload')) {
+        root.sessionStorage.setItem('tesairWorkerReload', '1');
+        root.location.reload();
+      }
+    } catch (_) { try { root.location.reload(); } catch (__) { } }
+  }
+  function startDrawWorker() {
+    if (typeof root.Worker !== 'function' || typeof root.OffscreenCanvas !== 'function'
+        || typeof canvas.transferControlToOffscreen !== 'function') return;
+    try {
+      const offscreen = canvas.transferControlToOffscreen();
+      const worker = new root.Worker('/player-worker.js');
+      worker.onmessage = event => {
+        const message = event.data;
+        if (!message) return;
+        if (message.type === 'dropped') {
+          if (message.epoch === renderEpoch) drawInFlight = false;
+          return;
+        }
+        if (message.type === 'error') { drawInFlight = false; diagnostic('draw_error'); reloadAfterWorkerFailure(); return; }
+        if (message.type !== 'presented') return;
+        drawInFlight = false;
+        try { if (root.sessionStorage) root.sessionStorage.removeItem('tesairWorkerReload'); } catch (_) {}
+        finishPresentation(message.pts, message.drawMs, message.presentWaitMs, message.epoch, message);
+      };
+      worker.onerror = () => { diagnostic('draw_worker_error'); reloadAfterWorkerFailure(); };
+      worker.postMessage({type: 'canvas', canvas: offscreen}, [offscreen]);
+      drawWorker = worker;
+    } catch (_) { drawWorker = null; reloadAfterWorkerFailure(); }
+  }
+  function queuePresentation(frame, next, outputAt) {
     if (pendingFrame) { pendingFrame.frame.close(); metricDropped++; }
-    pendingFrame = {frame, decoder: next};
-    if (renderHandle != null) return;
-    const epoch = renderEpoch;
-    if (typeof root.requestAnimationFrame !== 'function') { presentFrame(epoch); return; }
-    renderHandle = root.requestAnimationFrame(() => presentFrame(epoch));
+    pendingFrame = {frame, decoder: next, outputAt};
+    if (renderHandle != null || renderTimer != null) return;
+    const epoch = renderEpoch, job = ++renderJob;
+    if (typeof root.requestAnimationFrame !== 'function') { presentFrame(epoch, job); return; }
+    renderHandle = root.requestAnimationFrame(() => presentFrame(epoch, job));
+    // A visible embedded browser can service timers while postponing refresh callbacks.
+    // Keep one deadline for the coalesced job; only a successful draw releases ACK credits.
+    renderTimer = setTimeout(() => presentFrame(epoch, job), 50);
   }
-  function watchDecodeProgress() {
-    clearTimeout(decodeTimer); decodeTimer = null;
-    const oldest = frameArrivals.values().next().value;
-    if (!oldest || document.hidden) return;
-    const epoch = renderEpoch, deadline = decoderHasOutput ? MAX_PENDING_AGE_MS : STARTUP_DECODE_AGE_MS;
-    decodeTimer = setTimeout(() => {
-      decodeTimer = null;
-      if (epoch !== renderEpoch || !connected || document.hidden || !decoder) return;
-      const pending = frameArrivals.values().next().value;
-      if (pending && performance.now() - pending.at >= deadline) {
-        metricDropped++; diagnostic('decode_backpressure'); recover();
-      } else watchDecodeProgress();
-    }, Math.max(1, Math.ceil(deadline - (performance.now() - oldest.at))));
-  }
-  function recover() {
+  function recover(resetServer = true) {
     needKey = true;
-    discardPresentation(); resetVideoTiming(); decoderHasOutput = false;
-    const now = performance.now();
+    discardPresentation(); resetVideoTiming();
     try { if (decoder && decoder.state !== 'closed') { decoder.reset(); if (config) decoder.configure(config); } }
     catch (error) { decoderFailure(error); return; }
+    requestKeyframe(resetServer);
+  }
+  function requestKeyframe(resetServer = false) {
     clearTimeout(keyframeTimer);
+    const now = performance.now();
     const remaining = 500 - (now - recoveryAt), epoch = renderEpoch;
-    const requestKeyframe = () => {
+    const request = () => {
       keyframeTimer = null;
       if (epoch !== renderEpoch || !connected || document.hidden || !socket || socket.readyState !== WebSocket.OPEN) return;
-      recoveryAt = performance.now(); send({type: 'keyframe'});
+      recoveryAt = performance.now(); send({type: 'keyframe', reset: resetServer});
     };
-    if (remaining > 0) keyframeTimer = setTimeout(requestKeyframe, remaining);
-    else requestKeyframe();
+    if (remaining > 0) keyframeTimer = setTimeout(request, remaining);
+    else request();
   }
   function createDecoder(format) {
-    clearGesture();
-    closeDecoder();
     if (!Number.isInteger(format.width) || !Number.isInteger(format.height)
         || format.width <= 0 || format.height <= 0 || format.width > 8192 || format.height > 8192
         || typeof format.codec !== 'string') throw new Error('Invalid video format');
-    renderSizeDirty = true; decoderHasOutput = false;
+    clearGesture();
+    closeDecoder();
+    renderSizeDirty = true;
     requestedFps = Number.isFinite(format.fpsRequested) ? format.fpsRequested : 0;
     config = { codec: format.codec, codedWidth: format.width, codedHeight: format.height,
       // Let the browser use its available hardware decoder or fall back to software.
@@ -242,18 +346,30 @@
         for (const [pts, pending] of frameArrivals) if (pts <= frame.timestamp) {
           frameArrivals.delete(pts); pendingEncodedBytes -= pending.bytes;
         }
-        decoderHasOutput = true; watchDecodeProgress();
         metricDecoded++;
         metricDecodeTotal += decodeMs; metricDecodeMax = Math.max(metricDecodeMax, decodeMs); metricDecodeSamples++;
         if (timingDecodeSamples < 10000) {
           timingDecodeSamples++; decodeTotal += decodeMs; decodeMax = Math.max(decodeMax, decodeMs);
         }
-        queuePresentation(frame, next);
+        // Credit follows decoding, not drawing: the relay may refill the decoder while the
+        // canvas presents the newest frame, so a draw callback no longer caps the frame rate.
+        if (!send({type: 'ack', pts: frame.timestamp})) { frame.close(); return; }
+        queuePresentation(frame, next, outputAt);
       },
       error(error) { if (decoder === next) decoderFailure(error); }
     });
     decoder = next;
-    decoder.configure(config); needKey = true;
+    try {
+      decoder.configure(config);
+    } catch (first) {
+      // Some Chromium builds expose HEVC only under the hev1 sample-entry prefix.
+      if (/^hvc1/i.test(config.codec)) {
+        config = {...config, codec: config.codec.replace(/^hvc1/i, 'hev1')};
+        try { decoder.configure(config); }
+        catch (second) { throw first; }
+      } else throw first;
+    }
+    needKey = true;
     telemetry('browser_decoder_ready', {codec: config.codec, width: config.codedWidth, height: config.codedHeight});
     if (typeof VideoDecoder.isConfigSupported === 'function') {
       const probeConfig = config;
@@ -261,6 +377,9 @@
         VideoDecoder.isConfigSupported(probeConfig).then(result => telemetry('browser_capabilities', {
           codec: probeConfig.codec, width: probeConfig.codedWidth, height: probeConfig.codedHeight, configSupported: result.supported
         })).catch(() => telemetry('browser_capabilities', {result: 'unknown'}));
+        // Record whether this browser can decode HEVC at all; the relay only switches after a yes.
+        telemetry('browser_capabilities', {codec: 'hvc1.1.6.L93.B0', hevcSupported});
+        send({type: 'capabilities', hevc: hevcSupported});
       } catch (_) { telemetry('browser_capabilities', {result: 'unknown'}); }
     }
   }
@@ -284,6 +403,7 @@
   }
   function closeSocket() {
     viewArea = pendingViewArea = null;
+    clearTimeout(keyframeTimer); keyframeTimer = null;
     if (!socket) return;
     reportPerformance(performance.now(), 'connection_ended');
     const previous = socket; socket = null;
@@ -294,8 +414,7 @@
     if (leaving) return;
     connected = false; needKey = true; connectionAttempt++;
     clearTimeout(reconnectTimer); clearTimeout(displayTimer); clearTimeout(socketTimer);
-    clearGesture(); closeSocket();
-    closeDecoder();
+    clearGesture(); closeSocket(); discardPresentation();
     canvas.hidden = true; $('panel').hidden = false; $('retry').disabled = false;
     document.body.classList.remove('playing');
     if (unsupportedVideo) {
@@ -313,9 +432,8 @@
     clearTimeout(reconnectTimer); clearTimeout(socketTimer);
     const attempt = ++connectionAttempt;
     if (sessionRequest) sessionRequest.abort();
-    clearGesture(); closeSocket();
     connected = false;
-    closeDecoder();
+    clearGesture(); closeSocket(); discardPresentation();
     metricStartedAt = performance.now();
     try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
     canvas.hidden = true; $('panel').hidden = false; document.body.classList.remove('playing');
@@ -334,13 +452,30 @@
     let responseCode = 0;
     const timeout = setTimeout(() => request.abort(), 8000);
     try {
-      const response = await fetch('/session', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
-        headers: { 'Content-Type': 'application/json' }, body: '{}', signal: request.signal });
-      responseCode = response.status || 0;
-      if (!response.ok) throw new Error((await response.text()).trim().slice(0, 240) || `Phone returned ${response.status}.`);
+      // The session cookie outlives a dropped socket. Reconnect straight to the stream and only
+      // take the extra HTTPS round trip when the phone rejects the stale cookie.
+      if (!sessionReady) {
+        if (!hevcProbed) { hevcSupported = await hevcProbe; hevcProbed = true; }
+        const response = await fetch('/session', { method: 'POST', credentials: 'same-origin', cache: 'no-store',
+          headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({hevc: hevcSupported}),
+          signal: request.signal });
+        responseCode = response.status || 0;
+        if (!response.ok) throw new Error((await response.text()).trim().slice(0, 240) || `Phone returned ${response.status}.`);
+        const sessionInfo = typeof response.json === 'function' ? await response.json().catch(() => null) : null;
+        sessionReady = true;
+        // An updated app must replace a page that the Tesla browser kept open for days.
+        const page = sessionInfo && typeof sessionInfo.page === 'string' ? sessionInfo.page : '';
+        if (page) {
+          let seen = null;
+          try { seen = root.sessionStorage && root.sessionStorage.getItem('tesairPage'); } catch (_) {}
+          try { if (root.sessionStorage) root.sessionStorage.setItem('tesairPage', page); } catch (_) {}
+          if (seen && seen !== page) { root.location.reload(); return; }
+        }
+      }
       if (attempt !== connectionAttempt || leaving) return;
       socket = new WebSocket(`wss://${location.host}/stream`); socket.binaryType = 'arraybuffer';
       const current = socket;
+      let opened = false;
       socketTimer = setTimeout(() => {
         if (current === socket && current.readyState !== WebSocket.OPEN) {
           playbackProblem('socket_open_timeout');
@@ -348,13 +483,14 @@
         }
       }, 10000);
       current.onopen = () => {
+        opened = true;
         telemetry('browser_connected', {automatic: reconnectCount > 0});
         clearTimeout(socketTimer);
         connected = true; lastDisplay = ''; status('Connected · waiting for picture');
         connectionPresentation(reconnectCount ? 'Reconnecting…' : 'Connecting…', 'Waiting for CarPlay.');
         $('retry').disabled = false; lastFrame = lastPacket = lastServerMessage = performance.now();
         receivedVideo = false; recoveryRequested = false; waitingForVideo = false;
-        displaySize(); send({ type: 'keyframe' });
+        displaySize(); send({ type: 'keyframe', reset: false });
         if (pendingDiagnostic) { send(pendingDiagnostic); pendingDiagnostic = null; }
       };
       current.onmessage = event => {
@@ -363,7 +499,8 @@
           if (typeof event.data === 'string') {
             const payload = JSON.parse(event.data);
             if (payload.type === 'recover') {
-              diagnostic('server_recovery'); recover();
+              // The server has already invalidated its queue and requested an IDR.
+              diagnostic('server_recovery'); recover(false);
             } else if (payload.type === 'format') {
               try { createDecoder(payload); } catch (error) { decoderFailure(error); }
             } else if (payload.type === 'viewArea') {
@@ -371,10 +508,15 @@
               if (area) { pendingViewArea = area; applyViewArea(); }
             } else if ((payload.type === 'status' || payload.type === 'error') && typeof payload.message === 'string') {
               if (payload.type === 'error') playbackProblem('server_error');
+              if (payload.videoReady === false) {
+                clearGesture(); closeDecoder(); needKey = true;
+                receivedVideo = recoveryRequested = waitingForVideo = false;
+                canvas.hidden = true; $('panel').hidden = false; document.body.classList.remove('playing');
+              }
               status(payload.message);
               if (!$('panel').hidden) {
                 if (payload.type === 'error') connectionPresentation('Check your phone', '', true, payload.message);
-                else connectionPresentation(reconnectCount ? 'Reconnecting…' : 'Connecting…', payload.message);
+                else connectionPresentation(payload.videoReady === false || reconnectCount ? 'Reconnecting…' : 'Connecting…', payload.message);
               }
             } else if (payload.type === 'telemetry_consent') {
               try { if (root.TesAirTelemetry) root.TesAirTelemetry.refresh(); } catch (_) {}
@@ -384,25 +526,29 @@
             return;
           }
           const packet = parsePacket(event.data);
-          metricReceived++;
+          metricReceived++; timingReceived++;
           lastPacket = performance.now();
           if (!decoder || decoder.state !== 'configured') return;
-          if (document.hidden) { metricDropped++; return; }
+          if (document.hidden) {
+            // Keep credits alive while hidden; a visible page asks for a fresh keyframe.
+            if (packet.type === 'key') needKey = true;
+            send({type: 'ack', pts: packet.timestamp});
+            metricDropped++;
+            return;
+          }
           if (needKey && packet.type !== 'key') { metricDropped++; return; }
           if (frameArrivals.has(packet.timestamp)) { metricDropped++; return; }
-          const now = performance.now(), oldest = frameArrivals.values().next().value;
+          const now = performance.now();
           metricQueueMax = Math.max(metricQueueMax, decoder.decodeQueueSize || 0, frameArrivals.size);
-          // Decode reference frames through short network bursts; reset only bounded, genuinely stale work.
+          // Short browser stalls are not decoder failures; ACK liveness handles sustained stalls.
           if (decoder.decodeQueueSize >= MAX_PENDING_FRAMES || frameArrivals.size >= MAX_PENDING_FRAMES
-              || pendingEncodedBytes + packet.data.byteLength > MAX_PENDING_BYTES
-              || (oldest && now - oldest.at >= (decoderHasOutput ? MAX_PENDING_AGE_MS : STARTUP_DECODE_AGE_MS))) {
+              || pendingEncodedBytes + packet.data.byteLength > MAX_PENDING_BYTES) {
             metricDropped++; diagnostic('decode_backpressure'); recover(); return;
           }
           if (packet.type === 'key') needKey = false;
           frameArrivals.set(packet.timestamp, {at: now, bytes: packet.data.byteLength});
           pendingEncodedBytes += packet.data.byteLength;
           decoder.decode(new EncodedVideoChunk(packet));
-          watchDecodeProgress();
         } catch (error) {
           if (error.name === 'NotSupportedError') decoderFailure(error);
           else { diagnostic('packet_error'); status('Video interrupted · recovering'); recover(); }
@@ -410,6 +556,8 @@
       };
       current.onclose = event => {
         const normal = leaving || event.code === 1000 || event.code === 1001;
+        // A rejection before the socket opens means the cached session cookie went stale.
+        if (!opened) sessionReady = false;
         telemetry('browser_disconnected', {errorCode: String(event.code || 0),
           reason: leaving ? 'page_exit' : 'socket_closed', result: normal ? 'normal' : 'failed'});
         diagnostic('socket_closed', event.code);
@@ -428,9 +576,13 @@
   let gesture, pendingPoint, pointerTimer, lastMoveAt = -Infinity;
   function flushMove() {
     const point = pendingPoint; pendingPoint = null;
-    if (!gesture || !point || (point[0] === gesture.point[0] && point[1] === gesture.point[1])) return false;
-    send({type: 'touch', action: 'move', x: point[0], y: point[1]});
-    gesture.point = point;
+    const current = gesture;
+    if (!current || !point || (point[0] === current.point[0] && point[1] === current.point[1])) return false;
+    if (!send({type: 'touch', action: 'move', x: point[0], y: point[1]})) {
+      if (gesture === current) pendingPoint = point;
+      return false;
+    }
+    current.point = point;
     lastMoveAt = performance.now();
     return true;
   }
@@ -469,7 +621,7 @@
     try { canvas.setPointerCapture(event.pointerId); } catch (_) { return; }
     // Resize and native-layout changes cancel the gesture, so these bounds stay valid.
     gesture = {id: event.pointerId, point, bounds};
-    send({type: 'touch', action: 'down', x: point[0], y: point[1]});
+    if (!send({type: 'touch', action: 'down', x: point[0], y: point[1]})) clearGesture(false);
     event.preventDefault();
   });
   // Raw input avoids browser rendering alignment; older browsers keep pointermove.
@@ -518,7 +670,7 @@
   if (root.visualViewport) root.visualViewport.addEventListener('resize', scheduleDisplay);
   setInterval(() => {
     if (!connected) return;
-    send({ type: 'ping' });
+    if (!send({ type: 'ping' })) return;
     if (document.hidden) return;
     const now = performance.now(), elapsed = now - lastFrame;
     if (now - metricStartedAt >= 30000) reportPerformance(now);
@@ -531,13 +683,19 @@
       diagnostic('decoder_timeout');
       reconnect('Video decoder stopped responding. Restarting automatically.'); return;
     }
-    // The iPhone can pause video while its wireless session recovers. A responsive
-    // server is not a broken browser connection: keep it open and ask for a keyframe.
+    // An unchanged picture can stop producing packets. Keep its decoder and image
+    // while the connection is healthy; only pending decode work indicates a stall.
+    const quietSource = !waitingForVideo && pendingFrame == null && frameArrivals.size === 0 && (!decoder || !decoder.decodeQueueSize)
+      && now - lastPacket >= 2000;
     if (elapsed >= 2000 && (!recoveryRequested || now - recoveryAt >= 3000)) {
-      if (!waitingForVideo) { diagnostic('video_wait'); waitingForVideo = true; }
-      recoveryRequested = true; status('Waiting for video · requesting fresh frame'); recover();
+      recoveryRequested = true;
+      if (quietSource) requestKeyframe();
+      else {
+        if (!waitingForVideo) { diagnostic('video_wait'); waitingForVideo = true; }
+        status('Waiting for video · requesting fresh frame'); recover();
+      }
     }
-    if (receivedVideo && elapsed >= 3000) {
+    if (receivedVideo && elapsed >= 3000 && !quietSource) {
       clearGesture();
       canvas.hidden = true; $('panel').hidden = false; document.body.classList.remove('playing');
       connectionPresentation('Reconnecting…', 'Your display will return automatically.');
@@ -551,5 +709,6 @@
     closeSocket(); closeDecoder();
   });
   root.addEventListener('pageshow', event => { if (event.persisted) { leaving = false; connect(); } });
+  startDrawWorker();
   connect();
 })(typeof window !== 'undefined' ? window : globalThis);

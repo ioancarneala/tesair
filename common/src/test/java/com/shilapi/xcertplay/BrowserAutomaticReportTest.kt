@@ -104,6 +104,39 @@ class BrowserAutomaticReportTest {
         assertArrayEquals(previous, savedFile.readBytes())
     }
 
+    @Test fun manualExportIncludesEarlierCurrentAndArchivedEvidenceWithoutReplacingTheSmallSnapshot() {
+        for (name in listOf("diplay.log", "previous.log", "reliability.log", "reliability-previous.log")) {
+            log(name).writeText("earlier_disconnect_${name}\npassword=synthetic-secret\n" +
+                "routine_event captured=true\n".repeat(2_000) + "latest_evidence_${name}\n")
+        }
+        assertTrue(BrowserAutomaticReport.save(app))
+        val automatic = savedFile.readBytes()
+        assertFalse(automatic.toString(Charsets.UTF_8).contains("earlier_disconnect"))
+
+        val report = BrowserAutomaticReport.manualReport(app)
+
+        assertTrue(report.startsWith("TesAir diagnostic report\n"))
+        for (name in listOf("diplay.log", "previous.log", "reliability.log", "reliability-previous.log")) {
+            assertTrue(name, report.contains("earlier_disconnect_${name}"))
+            assertTrue(name, report.contains("latest_evidence_${name}"))
+        }
+        assertFalse(report.contains("synthetic-secret"))
+        assertArrayEquals(automatic, savedFile.readBytes())
+        assertTrue(automatic.size < 40 * 1024)
+    }
+
+    @Test fun manualExportKeepsTheExistingPerFileBoundAndDoesNotCreateAnAutomaticSnapshot() {
+        log("diplay.log").writeText("outside_retained_limit\n" +
+            "routine_event captured=true\n".repeat(25_000) + "retained_source_disconnect\n")
+
+        val report = BrowserAutomaticReport.manualReport(app)
+
+        assertTrue(report.contains("retained_source_disconnect"))
+        assertFalse(report.contains("outside_retained_limit"))
+        assertTrue(report.toByteArray(Charsets.UTF_8).size < SessionLogFile.MAX_BYTES + 16 * 1024)
+        assertFalse(savedFile.exists())
+    }
+
     @Test fun unavailablePrivateStorageFailsWithoutInterruptingTheCaller() {
         File(folder, "automatic-diagnostics").writeText("synthetic blocked directory")
         assertFalse(BrowserAutomaticReport.save(app))

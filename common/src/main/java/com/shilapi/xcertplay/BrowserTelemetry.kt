@@ -77,10 +77,12 @@ internal class BrowserTelemetryEngine(
     private val store = BrowserTelemetryStore(File(app.noBackupFilesDir, "telemetry/events.json"))
     private var sessionId: String? = null
     private var nextAttemptElapsedMs = 0L
+    private var serverRetryDeadlineElapsedMs = restoreServerRetryDeadline()
     private var failures = 0
     private var registered = false
     private var opened = false
     private val samples = mutableMapOf<String, Long>()
+    private val repeatedAttempts = linkedMapOf<String, Long>()
     private val reliabilityState = mutableMapOf<String, Any?>()
     private val baseMetadata by lazy(::metadata)
     private var batchLimit = BrowserTelemetryStore.MAX_BATCH_EVENTS
@@ -96,22 +98,33 @@ internal class BrowserTelemetryEngine(
 
     fun record(name: String, attributes: Map<String, Any?> = emptyMap()) {
         if (!enabled.get() || name !in BrowserTelemetrySchema.events) return
-        if (pendingRecords.incrementAndGet() > MAX_PENDING_RECORDS) { pendingRecords.decrementAndGet(); return }
         // Copy a small scalar map here; callers can reuse their maps after this method returns.
         val clean = BrowserTelemetrySchema.attributes(attributes)
+        // Leave capacity for setup, failures and state changes when routine callbacks flood the worker.
+        val pendingLimit = if (BrowserTelemetryDeliveryPolicy.priority(name, clean["result"] as? String) > 0) MAX_PENDING_RECORDS else MAX_PENDING_RECORDS - 64
+        if (pendingRecords.incrementAndGet() > pendingLimit) { pendingRecords.decrementAndGet(); return }
         val time = now()
         val elapsed = uptime()
         val generation = consentGeneration.get()
         worker.execute {
             try {
                 if (!enabled.get() || generation != consentGeneration.get()) return@execute
+                if (clean["manualIntervention"] == true || name == "session_ended" ||
+                    name == "receiver_start_requested" && sessionId == null) repeatedAttempts.clear()
+                val repeatKey = BrowserTelemetryDeliveryPolicy.repeatedAttemptKey(name, clean)
+                if (repeatKey != null) {
+                    val previous = repeatedAttempts[repeatKey]
+                    if (previous != null && elapsed - previous in 0 until BrowserTelemetryDeliveryPolicy.REPEATED_ATTEMPT_INTERVAL_MS) return@execute
+                    repeatedAttempts[repeatKey] = elapsed
+                    if (repeatedAttempts.size > 64) repeatedAttempts.remove(repeatedAttempts.keys.first())
+                }
                 val state = if (name == "reliability_sample") clean.filterKeys { it in RELIABILITY_STATE_KEYS } else emptyMap()
                 val stateChanged = state.any { (key, value) -> reliabilityState[key] != value }
                 if (name == "performance_summary" || name == "reliability_sample") {
                     val active = clean["iphoneActive"] == true || (clean["browserCount"] as? Number)?.toInt()?.let { it > 0 } == true
                     val minimum = if (name == "reliability_sample") {
                         if (active) 5 * 60_000L else 30 * 60_000L
-                    } else 60_000L
+                    } else 5 * 60_000L
                     val key = if (name == "reliability_sample") "$name:${if (active) "active" else "idle"}" else name
                     val previous = samples[key]
                     if (!stateChanged && previous != null && elapsed - previous in 0 until minimum) return@execute
@@ -131,7 +144,8 @@ internal class BrowserTelemetryEngine(
                     sessionId = null
                     reliabilityState.putAll(clean.filterKeys { it in RELIABILITY_STATE_KEYS })
                 }
-                if (stateChanged || name in IMMEDIATE_UPLOAD_EVENTS) upload(force = true)
+                if (stateChanged || name in IMMEDIATE_UPLOAD_EVENTS ||
+                    name == "diagnostic_feedback" && clean["result"] == "needs_help") upload(force = true)
             } catch (_: Exception) {
                 // A reporting or storage failure must never escape into the receiver process.
             } finally { pendingRecords.decrementAndGet() }
@@ -149,7 +163,7 @@ internal class BrowserTelemetryEngine(
             if (value && enabled.get() && generation == consentGeneration.get()) {
                 if (!previous) {
                     // Withdrawal may have been followed by process death before its worker cleared disk.
-                    store.clear(); sessionId = null; opened = false; samples.clear(); reliabilityState.clear()
+                    store.clear(); sessionId = null; opened = false; samples.clear(); repeatedAttempts.clear(); reliabilityState.clear()
                 }
                 ensureIdentity()
                 if (!previous) {
@@ -169,6 +183,7 @@ internal class BrowserTelemetryEngine(
                 sessionId = null
                 opened = false
                 samples.clear()
+                repeatedAttempts.clear()
                 reliabilityState.clear()
             }
         }
@@ -183,7 +198,9 @@ internal class BrowserTelemetryEngine(
         transport.cancel()
         worker.execute {
             prepareRequestedDeletion()
-            val completed = runCatching { if (online()) deletePending() else tombstones().length() == 0 }.getOrDefault(false)
+            val completed = runCatching {
+                if (online() && uptime() >= serverRetryDeadlineElapsedMs) deletePending() else tombstones().length() == 0
+            }.getOrDefault(false)
             Handler(Looper.getMainLooper()).post { callback(completed) }
         }
     }
@@ -257,10 +274,11 @@ internal class BrowserTelemetryEngine(
 
     private fun upload(force: Boolean = false) {
         prepareRequestedDeletion()
-        if ((uptime() < nextAttemptElapsedMs && !(force && failures == 0)) || !runCatching(online).getOrDefault(false)) return
+        if (uptime() < serverRetryDeadlineElapsedMs ||
+            (uptime() < nextAttemptElapsedMs && !(force && failures == 0)) || !runCatching(online).getOrDefault(false)) return
         val generation = consentGeneration.get()
         try {
-            if (!deletePending()) { backoff(); return }
+            if (!deletePending()) return
             if (!enabled.get()) return
             ensureIdentity()
             val id = preferences.getString("installationId", null) ?: return
@@ -270,7 +288,7 @@ internal class BrowserTelemetryEngine(
                     JSONObject().put("schemaVersion", 1).put("installationId", id).put("token", token).toString())
                 captureServerTime()
                 if (!enabled.get() || generation != consentGeneration.get()) return
-                if (status !in 200..299) { backoff(); return }
+                if (status !in 200..299) { backoff(status); return }
                 registered = true
             }
             val events = store.batch(now(), batchLimit)
@@ -297,7 +315,7 @@ internal class BrowserTelemetryEngine(
                     } else batchLimit = (events.size / 2).coerceAtLeast(1)
                     backoff()
                 }
-                else -> backoff()
+                else -> backoff(status)
             }
         } catch (_: Exception) { backoff() }
     }
@@ -326,7 +344,7 @@ internal class BrowserTelemetryEngine(
         preferences.edit().apply {
             if (pending.length() > 0) putString("pendingDeletion", pending.toString()) else remove("pendingDeletion")
         }.remove("installationId").remove("token").remove("deletionRequested").commit()
-        registered = false; sessionId = null; opened = false; samples.clear(); reliabilityState.clear()
+        registered = false; sessionId = null; opened = false; samples.clear(); repeatedAttempts.clear(); reliabilityState.clear()
         nextAttemptElapsedMs = 0L; failures = 0; batchLimit = BrowserTelemetryStore.MAX_BATCH_EVENTS
         store.clear()
     }
@@ -338,7 +356,13 @@ internal class BrowserTelemetryEngine(
             val entry = pending.getJSONObject(index)
             val status = runCatching { transport.request("DELETE", "/v1/installations/${entry.getString("installationId")}",
                 entry.getString("token"), null) }.getOrDefault(0)
-            if (status !in 200..299 && status != 404) remaining.put(entry)
+            captureServerTime()
+            if (status !in 200..299 && status != 404) {
+                remaining.put(entry)
+                for (rest in index + 1 until pending.length()) remaining.put(pending.getJSONObject(rest))
+                backoff(status)
+                break
+            }
         }
         preferences.edit().apply {
             if (remaining.length() == 0) remove("pendingDeletion") else putString("pendingDeletion", remaining.toString())
@@ -346,9 +370,26 @@ internal class BrowserTelemetryEngine(
         return remaining.length() == 0
     }
 
-    private fun backoff() {
+    private fun backoff(status: Int? = null) {
         failures = (failures + 1).coerceAtMost(9)
         nextAttemptElapsedMs = uptime() + (60_000L shl (failures - 1)).coerceAtMost(6 * 60 * 60_000L)
+        if (status == 429 || status == 503) {
+            transport.retryAfterMillis()?.coerceIn(0, BrowserTelemetryDeliveryPolicy.MAX_SERVER_DELAY_MS)?.let { delay ->
+                serverRetryDeadlineElapsedMs = maxOf(serverRetryDeadlineElapsedMs, uptime() + delay)
+                preferences.edit().putLong("serverRetryUntilMs", now() + (serverRetryDeadlineElapsedMs - uptime()).coerceAtLeast(0)).commit()
+            }
+        }
+    }
+
+    private fun restoreServerRetryDeadline(): Long {
+        val wall = now()
+        val deadline = runCatching { preferences.getLong("serverRetryUntilMs", 0L) }.getOrDefault(0L)
+        // Reject corrupt or clock-shifted values rather than renewing a full-day hold at every restart.
+        // Both operands are non-negative before subtraction, so even corrupt longs cannot overflow.
+        val remaining = if (wall >= 0 && deadline > wall) deadline - wall else 0L
+        val valid = remaining in 1..BrowserTelemetryDeliveryPolicy.MAX_SERVER_DELAY_MS
+        if (!valid && preferences.contains("serverRetryUntilMs")) preferences.edit().remove("serverRetryUntilMs").commit()
+        return uptime() + if (valid) remaining else 0L
     }
 
     internal fun awaitIdle(): Boolean = runCatching { worker.submit {}.get(5, TimeUnit.SECONDS); true }.getOrDefault(false)
@@ -371,14 +412,18 @@ internal interface BrowserTelemetryTransport {
     fun request(method: String, path: String, token: String?, body: String?): Int
     fun cancel() {}
     fun serverTimeMillis(): Long? = null
+    fun retryAfterMillis(): Long? = null
 }
 
 internal class BrowserTelemetryHttpTransport : BrowserTelemetryTransport {
     @Volatile private var active: HttpURLConnection? = null
     @Volatile private var serverTime: Long? = null
+    @Volatile private var retryAfter: Long? = null
     override fun request(method: String, path: String, token: String?, body: String?): Int {
         val connection = URL("https://telemetry.tesair.co$path").openConnection() as HttpURLConnection
         active = connection
+        serverTime = null
+        retryAfter = null
         try {
             connection.requestMethod = method
             connection.instanceFollowRedirects = false
@@ -394,9 +439,12 @@ internal class BrowserTelemetryHttpTransport : BrowserTelemetryTransport {
             }
             val status = connection.responseCode
             serverTime = connection.getHeaderFieldDate("Date", 0).takeIf { it > 0 }
+            retryAfter = BrowserTelemetryDeliveryPolicy.retryAfterMillis(connection.getHeaderField("Retry-After"),
+                System.currentTimeMillis(), serverTime)
             return status
         } finally { connection.disconnect(); if (active === connection) active = null }
     }
     override fun cancel() { active?.disconnect() }
     override fun serverTimeMillis(): Long? = serverTime
+    override fun retryAfterMillis(): Long? = retryAfter
 }

@@ -88,6 +88,25 @@ class BrowserReliabilityDiagnosticsTest {
         }
     }
 
+    @Test fun healthReportsUseThePublishedConnectionInsteadOfIndependentlyReadingLegacyGlobals() {
+        val states = ReflectionHelpers.getStaticField<BrowserConnectionStateStore>(DiPlaySessionService::class.java, "connectionStates")
+        val owner = Any()
+        states.claim(owner, BrowserConnectionState(requested = true, serverRunning = true,
+            receiver = BrowserReceiverState(phase = BrowserReceiverState.Phase.RETIRING,
+                retirementDelayed = true), browserCount = 1))
+        CarPlayBackgroundSession.active = true
+        try {
+            val snapshot = BrowserReliabilityDiagnostics.snapshot(browserContext())
+            assertTrue(snapshot, snapshot.contains("receiverRequested=true"))
+            assertTrue(snapshot, snapshot.contains("server=true viewers=1 session=false"))
+            assertTrue(snapshot, snapshot.contains("iphoneActive=false videoRendered=false"))
+            assertTrue(snapshot, snapshot.contains("receiverPhase=RETIRING retirementDelayed=true"))
+        } finally {
+            states.release(owner)
+            CarPlayBackgroundSession.active = false
+        }
+    }
+
     @Test fun unrelatedInterfaceAddressDoesNotCountAsTheAlias() {
         val network = mock(NetworkInterface::class.java)
         `when`(network.isUp).thenReturn(true)
@@ -204,6 +223,20 @@ class BrowserReliabilityDiagnosticsTest {
         }
     }
 
+    @Test fun delayedRetirementReportsTheStateChangeWithoutPromotingIdlePollingToStreaming() {
+        MonitorFixture().use { fixture ->
+            fixture.activity = BrowserReliabilityMonitor.Activity(false, false, BrowserReceiverState.Phase.RETIRING)
+            fixture.clock.advanceTo(0)
+            fixture.clock.advanceTo(1_000)
+            fixture.activity = fixture.activity.copy(retirementDelayed = true)
+            fixture.monitor.activityChanged()
+            fixture.clock.advanceTo(1_000)
+            assertEquals(listOf(0L, 1_000L), fixture.reports)
+            assertEquals(60_000L, fixture.clock.nextDelay())
+            assertEquals(0, fixture.proofPolls)
+        }
+    }
+
     @Test fun teardownDuringAnInFlightReportCannotScheduleWorkAfterExecutorShutdown() {
         MonitorFixture().use { fixture ->
             fixture.activity = BrowserReliabilityMonitor.Activity(iphone = true, browser = true)
@@ -226,6 +259,10 @@ class BrowserReliabilityDiagnosticsTest {
         `when`(output.clientCount).thenReturn(1)
         `when`(output.hasRenderedVideo).thenReturn(true)
         ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", output)
+        val states = ReflectionHelpers.getStaticField<BrowserConnectionStateStore>(DiPlaySessionService::class.java, "connectionStates")
+        val owner = Any()
+        states.claim(owner, BrowserConnectionState(serverRunning = true, browserCount = 1,
+            videoRendered = true))
         telemetry.setEnabled(true)
         val monitor = BrowserReliabilityMonitor(app)
         try {
@@ -245,6 +282,7 @@ class BrowserReliabilityDiagnosticsTest {
             monitor.close()
             telemetry.shutdown()
             ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", null)
+            states.release(owner)
         }
     }
 

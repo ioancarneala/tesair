@@ -44,25 +44,32 @@ internal class BrowserCarPlayLayout private constructor(
         private const val MAX_ENCODED_WIDTH = 3840
         private const val MAX_ENCODED_HEIGHT = 2160
 
-        /**
-         * Quality scales the session canvas, never the browser's layout or its resize commands.
-         * The 4K ceiling currently limits 160% to 150%; keep both axes at the same scale.
-         */
+        /** Width-only callers retain the established 1920-wide, 1440-high canvas. */
         fun canvasSize(width: Int, resolutionPercent: Int = 100): CanvasSize {
             require(width > 0)
-            val baseWidth = maxOf(1920, minOf(MAX_WIDTH, width)) and 1.inv()
+            return canvasSize(maxOf(1920, width), CANVAS_HEIGHT, resolutionPercent)
+        }
+
+        /** The session canvas follows the browser window exactly; quality scales it, nothing pads it. */
+        fun canvasSize(width: Int, height: Int, resolutionPercent: Int): CanvasSize {
+            require(width > 0 && height > 0)
+            // A Tesla viewport is wide and fixed: reserving 4:3 height decoded a fifth of the
+            // frames for pixels no browser window displayed. Native areas that need a different
+            // aspect are still declared inside this canvas.
+            val baseWidth = (minOf(MAX_WIDTH, width) and 1.inv()).coerceAtLeast(2)
+            val baseHeight = (minOf(CANVAS_HEIGHT, height) and 1.inv()).coerceAtLeast(2)
             val percent = resolutionPercent.coerceIn(30, 160).coerceAtMost(
-                minOf(MAX_ENCODED_WIDTH * 100 / baseWidth, MAX_ENCODED_HEIGHT * 100 / CANVAS_HEIGHT),
+                minOf(MAX_ENCODED_WIDTH * 100 / baseWidth, MAX_ENCODED_HEIGHT * 100 / baseHeight),
             )
             return CanvasSize(
-                width = (baseWidth * percent / 100) and 1.inv(),
-                height = (CANVAS_HEIGHT * percent / 100) and 1.inv(),
+                width = ((baseWidth * percent / 100) and 1.inv()).coerceAtLeast(2),
+                height = ((baseHeight * percent / 100) and 1.inv()).coerceAtLeast(2),
             )
         }
 
         fun create(width: Int, height: Int, resolutionPercent: Int = 100): BrowserCarPlayLayout {
             require(width > 0 && height > 0)
-            val (canvasWidth, canvasHeight) = canvasSize(width, resolutionPercent)
+            val (canvasWidth, canvasHeight) = canvasSize(width, height, resolutionPercent)
             fun area(aspect: Double): AirPlayViewArea {
                 val w: Double
                 val h: Double
