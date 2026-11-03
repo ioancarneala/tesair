@@ -37,6 +37,7 @@ class BrowserDashboardActivity : ComponentActivity() {
     private var languagePreference = AppLocale.SYSTEM
     private var settingsRepair: SettingsRepair? = null
     private var telemetryConsent: AlertDialog? = null
+    private var connectionObservation: java.io.Closeable? = null
 
     private enum class SettingsRepair { HOTSPOT, BLUETOOTH, VPN }
 
@@ -44,9 +45,11 @@ class BrowserDashboardActivity : ComponentActivity() {
         registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) {
             awaitingPermissions = false
             permissionDenied = !hasWirelessPermissions()
-            if (!permissionDenied) startReceiver(reconnectAfterPermissions && !CarPlayBackgroundSession.active)
+            if (!permissionDenied) startReceiver(reconnectAfterPermissions && !DiPlaySessionService.currentConnectionState().iphoneActive)
             updateStatus()
         }
+    private val notificationPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { updateStatus() }
     private val routeConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             awaitingRouteConsent = false
@@ -55,6 +58,7 @@ class BrowserDashboardActivity : ComponentActivity() {
         }
     private val refresh = object : Runnable {
         override fun run() {
+            // Route consent and OS grants can change outside the connection service.
             updateStatus()
             handler.postDelayed(this, 1_000)
         }
@@ -100,7 +104,7 @@ class BrowserDashboardActivity : ComponentActivity() {
                 if (!hasWirelessPermissions()) requestReceiver(reconnect = true)
                 else openGuide()
             },
-            allowConnection = { requestReceiver(reconnect = !CarPlayBackgroundSession.active) },
+            allowConnection = { requestReceiver(reconnect = !DiPlaySessionService.currentConnectionState().iphoneActive) },
             openHotspot = ::openHotspotSettings,
             openBluetooth = ::openBluetoothSettings,
             openVpn = ::openVpnSettings,
@@ -124,6 +128,9 @@ class BrowserDashboardActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        connectionObservation = DiPlaySessionService.observeConnectionState {
+            handler.post { if (connectionObservation != null && !isFinishing && !isDestroyed) updateStatus() }
+        }
         handler.removeCallbacks(refresh)
         handler.post(refresh)
         BrowserUpdates.check(this) {
@@ -153,7 +160,7 @@ class BrowserDashboardActivity : ComponentActivity() {
         }
         if (permissionDenied && hasWirelessPermissions()) {
             permissionDenied = false
-            startReceiver(reconnectAfterPermissions && !CarPlayBackgroundSession.active)
+            startReceiver(reconnectAfterPermissions && !DiPlaySessionService.currentConnectionState().iphoneActive)
         }
         resumeAfterSettings()
         DiPlaySessionService.currentBrowserRuntime()?.refreshAppearance()
@@ -167,6 +174,8 @@ class BrowserDashboardActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        connectionObservation?.close()
+        connectionObservation = null
         handler.removeCallbacks(refresh)
         super.onStop()
     }
@@ -205,6 +214,10 @@ class BrowserDashboardActivity : ComponentActivity() {
         if (reconnect) BrowserTelemetry.record(this, "receiver_start_requested", mapOf("automatic" to false, "manualIntervention" to true, "source" to "dashboard"))
         serviceFailure = null
         reconnectAfterPermissions = false
+        if (Build.VERSION.SDK_INT >= 33 &&
+            checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            notificationPermission.launch(android.Manifest.permission.POST_NOTIFICATIONS)
+        }
         try {
             startForegroundService(Intent(this, DiPlaySessionService::class.java).apply {
                 action = if (reconnect) DiPlaySessionService.ACTION_RECONNECT else DiPlaySessionService.ACTION_RECOVER
@@ -287,28 +300,28 @@ class BrowserDashboardActivity : ComponentActivity() {
         }
         // Ordinary Bluetooth recovery already retries automatically. Only a terminal hotspot
         // failure needs an explicit restart after the user has corrected its system settings.
-        if (repair == SettingsRepair.HOTSPOT && !CarPlayBackgroundSession.active &&
+        if (repair == SettingsRepair.HOTSPOT && !DiPlaySessionService.currentConnectionState().iphoneActive &&
             !BrowserSessionRecovery.stopped(this) &&
-            DiPlaySessionService.currentBrowserRuntime()?.setupNeedsAttention == true &&
+            DiPlaySessionService.currentConnectionState().receiver.setupNeedsAttention &&
             hotspotNeedsAttention() && CarHotspotStatus.isEnabled(this) != false) {
             requestReceiver(reconnect = true)
         }
     }
 
     private fun hotspotNeedsAttention(): Boolean {
-        if (CarPlayBackgroundSession.active ||
+        if (DiPlaySessionService.currentConnectionState().iphoneActive ||
             AirPlayPersistence.loadWirelessHotspotMode(this) != WirelessHotspotMode.MANUAL) return false
         if (CarHotspotStatus.isEnabled(this) == false) return true
-        val failure = DiPlaySessionService.currentBrowserRuntime()?.status as? CarPlayStatus.Failed
+        val failure = DiPlaySessionService.currentConnectionState().receiver.status as? CarPlayStatus.Failed
         return failure?.startupFailure == WirelessStartupFailure.HOTSPOT_CONFIGURATION ||
             failure?.startupFailure == WirelessStartupFailure.HOTSPOT_NOT_READY
     }
 
-    private fun bluetoothRequired(): Boolean = !CarPlayBackgroundSession.active && hasWirelessPermissions() &&
+    private fun bluetoothRequired(): Boolean = !DiPlaySessionService.currentConnectionState().iphoneActive && hasWirelessPermissions() &&
         runCatching { getSystemService(BluetoothManager::class.java)?.adapter?.isEnabled }.getOrNull() == false
 
     private fun bluetoothUnavailable(): Boolean {
-        if (CarPlayBackgroundSession.active || !hasWirelessPermissions()) return false
+        if (DiPlaySessionService.currentConnectionState().iphoneActive || !hasWirelessPermissions()) return false
         return runCatching { getSystemService(BluetoothManager::class.java)?.let { it.adapter == null } == true }.getOrDefault(false)
     }
 
@@ -316,17 +329,17 @@ class BrowserDashboardActivity : ComponentActivity() {
         if (!::dashboard.isInitialized || isDestroyed) return
         val route = BrowserAddressService.snapshot(this)
         val output = DiPlaySessionService.currentBrowserOutput()
-        val runtime = DiPlaySessionService.currentBrowserRuntime()
+        val connection = DiPlaySessionService.currentConnectionState()
         val urls = output?.urls.orEmpty()
         val viewport = BrowserCarPlayViewport.load(this)
         val hotspotMode = AirPlayPersistence.loadWirelessHotspotMode(this)
-        val needsAttention = permissionDenied || runtime?.setupNeedsAttention == true
+        val needsAttention = permissionDenied || connection.receiver.setupNeedsAttention
         dashboard.render(BrowserDashboardView.State(
-            serverRunning = output?.running == true,
-            sessionRunning = CarPlayBackgroundSession.hasSession(),
-            iphoneActive = CarPlayBackgroundSession.active,
-            browserConnected = (output?.clientCount ?: 0) > 0,
-            videoRendered = output?.hasRenderedVideo == true,
+            serverRunning = connection.serverRunning,
+            sessionRunning = connection.sessionRunning,
+            iphoneActive = connection.iphoneActive,
+            browserConnected = connection.browserCount > 0,
+            videoRendered = connection.videoRendered,
             batteryAllowed = BrowserBackgroundReadiness.snapshot(this).allowed,
             routeActive = route.active,
             routeEnabled = route.enabled,
@@ -358,7 +371,9 @@ class BrowserDashboardActivity : ComponentActivity() {
                 SharedCertificateSync.State.ERROR -> getString(R.string.browser_https_unavailable)
                 else -> null
             },
-            diagnostic = listOfNotNull(runtime?.status?.javaClass?.simpleName, serviceFailure, output?.status,
+            diagnostic = listOfNotNull(connection.receiver.status?.javaClass?.simpleName, serviceFailure, connection.outputStatus,
+                connection.receiver.phase.name.takeIf { connection.receiver.available },
+                "receiver_retirement_pending".takeIf { connection.receiver.retirementDelayed },
                 urls.joinToString("\n"),
                 getString(R.string.browser_dashboard_viewport, viewport.first, viewport.second),
                 getString(R.string.browser_dashboard_setup_attention_hint).takeIf { needsAttention })
@@ -370,10 +385,11 @@ class BrowserDashboardActivity : ComponentActivity() {
             bluetoothUnavailable = bluetoothUnavailable(),
             otherVpn = !route.active && BrowserAddressService.hasOtherVpn(this),
             receiverFailed = serviceFailure != null || (BrowserSessionRecovery.stopped(this) &&
-                output?.running != true && runtime == null),
+                !connection.serverRunning && !connection.receiver.available),
             addressNeedsHelp = output?.certificateSyncState == SharedCertificateSync.State.RETRYING ||
                 output?.certificateSyncState == SharedCertificateSync.State.ERROR,
-            stopped = !BrowserSessionRecovery.requested(this) && !CarPlayBackgroundSession.hasSession(),
+            stopped = connection.stopped,
+            receiverStarting = connection.receiver.phase == BrowserReceiverState.Phase.STARTING || connection.receiver.retiring,
         ))
     }
 

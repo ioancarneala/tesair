@@ -168,12 +168,12 @@ class BrowserSettingsUiTest {
             shadowOf(Looper.getMainLooper()).idle()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
             val slider = descendants(dialog.window!!.decorView).filterIsInstance<SeekBar>().single()
-            assertEquals(6, slider.max)
-            assertEquals(1, slider.progress)
+            assertEquals(30, slider.max)
+            assertEquals(5, slider.progress)
             assertEquals(screen.getString(R.string.apply_and_reconnect),
                 dialog.getButton(AlertDialog.BUTTON_POSITIVE).text.toString())
 
-            slider.progress = 4
+            slider.progress = 10
             assertEquals(150, AirPlayPersistence.loadWidthPhysicalMm(context))
             if (cancelWithButton) dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
             else dialog.cancel()
@@ -198,9 +198,9 @@ class BrowserSettingsUiTest {
             shadowOf(Looper.getMainLooper()).idle()
             val dialog = ShadowAlertDialog.getLatestAlertDialog()
             val slider = descendants(dialog.window!!.decorView).filterIsInstance<SeekBar>().single()
-            assertEquals((previous - 100) / 50, slider.progress)
+            assertEquals((previous - 100) / 10, slider.progress)
             assertEquals(screen.getString(R.string.save), dialog.getButton(AlertDialog.BUTTON_POSITIVE).text.toString())
-            slider.progress = (value - 100) / 50
+            slider.progress = (value - 100) / 10
             assertEquals(previous, AirPlayPersistence.loadWidthPhysicalMm(context))
 
             dialog.getButton(AlertDialog.BUTTON_POSITIVE).performClick()

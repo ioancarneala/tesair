@@ -67,6 +67,8 @@ class BrowserServerRecoveryTest {
         CarPlayBackgroundSession.clear()
         ShadowVpnService.setPrepareResult(null)
         BrowserSessionRecovery.markStopped(service)
+        ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "runtime", null)
+        ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "browser", null)
     }
 
     @Test fun transientServerFailureRecoversWithoutAnotherActivityStart() {
@@ -404,13 +406,20 @@ class BrowserServerRecoveryTest {
 
     @Test fun serviceDestructionReleasesTheReceiverButRetainsRequestedRecovery() {
         configureReceiver()
+        var finishClose: (() -> Unit)? = null
+        doAnswer { invocation ->
+            finishClose = invocation.getArgument(1)
+            null
+        }.`when`(runtime).close(eq("service_stopped") ?: "", any<() -> Unit>() ?: {})
         start()
         completeAttempt()
         lifecycle.destroy()
         destroyed = true
         completeAttempt()
 
-        verify(runtime, times(1)).close("service_stopped")
+        assertSame(runtime, DiPlaySessionService.currentBrowserRuntime())
+        assertNotNull(finishClose)
+        finishClose!!.invoke()
         assertNull(DiPlaySessionService.currentBrowserRuntime())
         assertTrue(BrowserSessionRecovery.canRecover(service))
     }

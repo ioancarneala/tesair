@@ -24,12 +24,28 @@ internal class BrowserTelemetryStore(private val file: File) {
         if (prune(now)) persist()
         val batch = mutableListOf<JSONObject>()
         var bytes = 256
-        for (event in events) {
+        val maximum = limit.coerceIn(1, MAX_BATCH_EVENTS)
+        // Errors and current state must not wait behind days of offline performance samples.
+        // Keep the selected events in their original order so state transitions remain ordered.
+        val prioritized = events.withIndex().sortedWith(compareByDescending<IndexedValue<JSONObject>> {
+            BrowserTelemetryDeliveryPolicy.priority(it.value)
+        }.thenBy {
+            val priority = BrowserTelemetryDeliveryPolicy.priority(it.value)
+            if (priority == 1 || priority == 3) -it.index else it.index
+        })
+        // A persistent fault must not starve initial setup or hide a later recovery observation.
+        val reservedMilestones = if (maximum >= 3) events.filter(BrowserTelemetryDeliveryPolicy::isMilestone)
+            .take((maximum / 4).coerceIn(1, 4)) else emptyList()
+        val currentState = if (maximum >= 3) events.lastOrNull { BrowserTelemetryDeliveryPolicy.priority(it) == 1 } else null
+        val candidates = (reservedMilestones + listOfNotNull(currentState) + prioritized.map { it.value }).distinct()
+        for (event in candidates) {
             val size = event.toString().toByteArray(Charsets.UTF_8).size + 1
-            if (batch.size >= limit.coerceIn(1, MAX_BATCH_EVENTS) || bytes + size > MAX_BATCH_BYTES) break
+            if (batch.size >= maximum) break
+            if (bytes + size > MAX_BATCH_BYTES) continue
             batch.add(event); bytes += size
         }
-        return batch
+        val selected = batch.toSet()
+        return events.filter { it in selected }
     }
 
     fun acknowledge(ids: Set<String>) {
@@ -60,7 +76,11 @@ internal class BrowserTelemetryStore(private val file: File) {
         val before = events.size
         events.removeAll { it.optLong("timeMs") < now - MAX_AGE_MS || it.optLong("timeMs") > now + 24 * 60 * 60_000L }
         var bytes = events.sumOf { it.toString().toByteArray(Charsets.UTF_8).size + 1 } + 2
-        while (bytes > MAX_BYTES && events.isNotEmpty()) bytes -= events.removeAt(0).toString().toByteArray(Charsets.UTF_8).size + 1
+        while (bytes > MAX_BYTES && events.isNotEmpty()) {
+            val lowestPriority = events.minOf(BrowserTelemetryDeliveryPolicy::retentionPriority)
+            val index = events.indexOfFirst { BrowserTelemetryDeliveryPolicy.retentionPriority(it) == lowestPriority }
+            bytes -= events.removeAt(index).toString().toByteArray(Charsets.UTF_8).size + 1
+        }
         return before != events.size
     }
 

@@ -70,7 +70,7 @@
             android:exported="false" android:launchMode="singleTask"
             android:resizeableActivity="true"
             android:theme="@style/Theme.Browser.Onboarding" />
-        <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity" android:exported="true">
+        <activity android:name="com.shilapi.xcertplay.CarPlayHostActivity" android:exported="false" tools:replace="android:exported">
             <intent-filter tools:node="removeAll" />
             <meta-data android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" tools:node="remove" />
         </activity>

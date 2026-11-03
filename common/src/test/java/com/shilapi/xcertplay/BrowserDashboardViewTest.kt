@@ -116,6 +116,19 @@ class BrowserDashboardViewTest {
         assertEquals(listOf("retry"), actions)
     }
 
+    @Test fun preparingOrRetiringTheReceiverUsesTheExistingWaitStepWithoutAFalseRepairAction() {
+        val view = dashboard()
+        val retiring = state(receiverStarting = true, sessionRunning = false,
+            iphoneActive = false, hotspotNeedsAttention = true)
+        view.render(retiring)
+        assertTrue(texts(view).contains(context.getString(R.string.browser_next_starting_title)))
+        assertEquals(BrowserDashboardView.Action.NONE, retiring.action)
+        assertTrue(mainActions(view).isEmpty())
+
+        val permissionMissing = state(receiverStarting = true, permissionsRequired = true)
+        assertEquals(BrowserDashboardView.Action.PERMISSIONS, permissionMissing.action)
+    }
+
     @Test fun stoppedReceiverOffersStartWithoutPretendingToConnect() {
         val actions = mutableListOf<String>()
         val view = dashboard(actions)
@@ -533,6 +546,7 @@ class BrowserDashboardViewTest {
         receiverFailed: Boolean = false,
         addressNeedsHelp: Boolean = false,
         stopped: Boolean = false,
+        receiverStarting: Boolean = false,
     ) = BrowserDashboardView.State(
         serverRunning = serverRunning, sessionRunning = sessionRunning, iphoneActive = iphoneActive,
         browserConnected = browserConnected, videoRendered = rendered, batteryAllowed = battery,
@@ -544,6 +558,7 @@ class BrowserDashboardViewTest {
         bluetoothRequired = bluetoothRequired, otherVpn = otherVpn, receiverFailed = receiverFailed,
         addressNeedsHelp = addressNeedsHelp,
         stopped = stopped,
+        receiverStarting = receiverStarting,
     )
 
     private fun button(view: View, id: Int) = descendants(view).filterIsInstance<Button>()

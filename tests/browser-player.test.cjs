@@ -49,7 +49,7 @@ test('malformed packets and nonrepresentable timestamps are rejected', () => {
   assert.throws(() => parsePacket(bytes));
 });
 test('automatic retry backs off and stays bounded after long outages', () => {
-  assert.deepEqual([1, 2, 3, 4, 5, 6, 100].map(retryDelay), [500, 1000, 2000, 4000, 8000, 10000, 10000]);
+  assert.deepEqual([1, 2, 3, 4, 5, 6, 100].map(retryDelay), [0, 250, 500, 1000, 2000, 4000, 10000]);
 });
 
 function browserFixture(responses = [], videoSupported = true, decoderOptions = {}, options = {}) {
@@ -80,7 +80,7 @@ function browserFixture(responses = [], videoSupported = true, decoderOptions = 
     }};
   class WebSocket {
     static OPEN = 1;
-    constructor(url) { this.url = url; this.readyState = 0; this.sent = []; sockets.push(this); }
+    constructor(url) { this.url = url; this.readyState = 0; this.bufferedAmount = 0; this.sent = []; sockets.push(this); }
     send(value) { this.sent.push(JSON.parse(value)); }
     close() { this.readyState = 3; }
   }
@@ -89,10 +89,14 @@ function browserFixture(responses = [], videoSupported = true, decoderOptions = 
     configure(config) {
       this.config = config;
       if (decoderOptions.configureError) throw decoderOptions.configureError;
+      if (decoderOptions.rejectHevc && /^(hvc1|hev1)/i.test(String(config.codec || '')))
+        throw {name: 'NotSupportedError'};
+      if (decoderOptions.rejectCodecPrefix && String(config.codec || '').startsWith(decoderOptions.rejectCodecPrefix))
+        throw {name: 'NotSupportedError'};
       this.state = 'configured';
     }
     close() { this.state = 'closed'; }
-    reset() { this.state = 'unconfigured'; }
+    reset() { this.state = 'unconfigured'; this.resets = (this.resets || 0) + 1; }
     decode(chunk) { (this.chunks ||= []).push(chunk); }
   }
   const window = {...eventTarget(), document, isSecureContext: true, devicePixelRatio: 1,
@@ -128,6 +132,7 @@ function browserFixture(responses = [], videoSupported = true, decoderOptions = 
     },
     async settle() { await new Promise(setImmediate); },
     pendingTimers() { return [...timers.values()].map(timer => timer.delay); },
+    timerCallbacks(delay) { return [...timers.values()].filter(timer => timer.delay === delay).map(timer => timer.callback); },
     pendingAnimationFrames() { return animations.size; },
     animationCallbacks() { return [...animations.values()]; },
     elapse(elapsed) { now += elapsed; },
@@ -143,14 +148,15 @@ test('page load obtains an automatic cookie session before opening the stream', 
   assert.equal(browser.requests.length, 1);
   const {url, options} = browser.requests[0];
   assert.equal(url, '/session'); assert.equal(options.method, 'POST');
-  assert.equal(options.body, '{}'); assert.equal(options.credentials, 'same-origin');
+  assert.deepEqual(JSON.parse(options.body), {hevc: false}); assert.equal(options.credentials, 'same-origin');
   assert.equal(options.cache, 'no-store'); assert.equal(options.headers['Content-Type'], 'application/json');
   assert.equal(browser.sockets[0].url, 'wss://bridge.test:8443/stream');
   const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
   assert.deepEqual(socket.sent[0], {type: 'display', width: 1920, height: 1080, dpr: 1});
-  assert.deepEqual(socket.sent[1], {type: 'keyframe'});
-  socket.onclose({reason: 'Phone restarted'}); browser.runTimer(500); await browser.settle();
-  assert.equal(browser.requests.length, 2); assert.equal(browser.sockets.length, 2);
+  assert.deepEqual(socket.sent[1], {type: 'keyframe', reset: false});
+  socket.onclose({reason: 'Phone restarted'}); browser.runTimer(0); await browser.settle();
+  // The session cookie survives a dropped socket, so only the stream is reopened.
+  assert.equal(browser.requests.length, 1); assert.equal(browser.sockets.length, 2);
 });
 test('session errors reconnect quietly without opening an unauthorized stream', async () => {
   const browser = browserFixture([{ok: false, status: 503, text: async () => 'Phone display is starting'}]);
@@ -161,13 +167,13 @@ test('session errors reconnect quietly without opening an unauthorized stream', 
   assert.equal(browser.elements.get('heading').textContent, 'Reconnecting…');
   assert.equal(browser.elements.get('retry').hidden, true);
   assert.equal(browser.elements.get('retry').disabled, false);
-  browser.runTimer(500); await browser.settle();
+  browser.runTimer(0); await browser.settle();
   assert.equal(browser.requests.length, 2); assert.equal(browser.sockets.length, 1);
 });
 test('failed fetch keeps a single quiet reconnect state throughout automatic backoff', async () => {
   const browser = browserFixture(Array.from({length: 7}, () => new TypeError('Failed to fetch')));
   await browser.settle();
-  for (const delay of [500, 1000, 2000, 4000, 8000, 10000]) {
+  for (const delay of [0, 250, 500, 1000, 2000, 4000]) {
     assert.equal(browser.elements.get('heading').textContent, 'Reconnecting…');
     assert.equal(browser.elements.get('intro').textContent, 'Your display will return automatically.');
     assert.equal(browser.elements.get('activity').hidden, false);
@@ -179,7 +185,7 @@ test('failed fetch keeps a single quiet reconnect state throughout automatic bac
     await browser.settle();
   }
   assert.equal(browser.requests.length, 7); assert.equal(browser.sockets.length, 0);
-  assert.deepEqual(browser.pendingTimers(), [10000]);
+  assert.deepEqual(browser.pendingTimers(), [8000]);
 });
 test('server notices never overlay a playing picture', async () => {
   const browser = browserFixture(); await browser.settle();
@@ -194,6 +200,41 @@ test('server notices never overlay a playing picture', async () => {
   assert.equal(browser.elements.has('message'), false);
   assert.equal(browser.decoders[0].state, 'configured'); assert.equal(socket.readyState, 1);
 });
+test('an explicit inactive-video status retires the old picture and cannot be undone by a queued draw', async () => {
+  for (const type of ['status', 'error']) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+    const canvas = browser.elements.get('screen');
+    canvas.dispatch('pointerdown', {pointerId: 1, button: 0, clientX: 100, clientY: 100, preventDefault() {}});
+    let closed = 0;
+    socket.onmessage({data: videoPacket(2, false)});
+    decoder.callbacks.output({timestamp: 2, close() { closed++; }});
+    const [staleDraw] = browser.animationCallbacks(), draws = browser.draws.length;
+    const presented = socket.sent.filter(value => value.type === 'presented').length;
+    const message = 'Așteptăm conexiunea cu telefonul';
+    socket.onmessage({data: JSON.stringify({type, message, videoReady: false})});
+    assert.equal(closed, 1, type);
+    assert.equal(decoder.state, 'closed', type);
+    assert.equal(browser.pendingAnimationFrames(), 0, type);
+    assert.equal(canvas.hasPointerCapture(1), false, type);
+    assert.equal(socket.sent.filter(value => value.type === 'touch').at(-1).action, 'cancel', type);
+    assert.equal(canvas.hidden, true, type);
+    assert.equal(browser.elements.get('panel').hidden, false, type);
+    assert.equal(browser.document.body.classList.contains('playing'), false, type);
+    assert.equal(browser.elements.get('heading').textContent, type === 'error' ? 'Check your phone' : 'Reconnecting…', type);
+    assert.equal(browser.elements.get(type === 'error' ? 'error' : 'intro').textContent, message, type);
+    staleDraw();
+    assert.equal(browser.draws.length, draws, type);
+    // Credit was already released for the decoded frame; the stale draw must not report presentation.
+    assert.equal(socket.sent.filter(value => value.type === 'presented').length, presented, type);
+    assert.equal(socket.sent.filter(value => value.type === 'ack').at(-1).pts, 2, type);
+    assert.equal(canvas.hidden, true, type);
+    socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
+    browser.drawFrame(browser.decoders.at(-1), {timestamp: 3, close() {}});
+    assert.equal(canvas.hidden, false, type);
+    assert.equal(browser.elements.get('panel').hidden, true, type);
+    assert.equal(socket.readyState, 1, type);
+  }
+});
 test('optional reporting exceptions never prevent picture drawing or frame acknowledgement', async () => {
   const browser = browserFixture([], true, {}, {telemetry: {event() { throw new Error('Reporting unavailable'); }}});
   await browser.settle();
@@ -203,6 +244,19 @@ test('optional reporting exceptions never prevent picture drawing or frame ackno
   assert.equal(browser.elements.get('panel').hidden, true);
   assert.ok(socket.sent.some(message => message.type === 'ack' && message.pts === 1));
   assert.equal(socket.readyState, 1);
+});
+test('first-frame reporting runs only after the successful draw acknowledgement', async () => {
+  let socket, reported = false;
+  const browser = browserFixture([], true, {}, {telemetry: {event(name) {
+    if (name !== 'browser_first_frame') return;
+    assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 1);
+    reported = true;
+  }}});
+  await browser.settle();
+  socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
+  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
+  browser.drawFrame(browser.decoders[0], {timestamp: 1, close() {}});
+  assert.equal(reported, true);
 });
 test('decoder rejection reports the failing codec and encoded resolution without exception text', async () => {
   const events = [];
@@ -420,6 +474,26 @@ function videoPacket(timestamp, key = true, payloadBytes = 1) {
   header.setUint8(0, key ? 1 : 0); header.setBigUint64(1, BigInt(timestamp));
   return packet;
 }
+test('an HEVC format retries the hev1 prefix and reports an unusable decoder to the relay', async () => {
+  const browser = browserFixture([], true, {rejectHevc: true});
+  await browser.settle();
+  const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
+  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'hvc1.1.6.L123.B0', width: 1182, height: 920})});
+  const decoder = browser.decoders.at(-1);
+  assert.equal(decoder.state, 'closed');
+  assert.deepEqual(socket.sent.filter(message => message.type === 'capabilities').at(-1), {type: 'capabilities', hevc: false});
+});
+
+test('an HEVC format succeeds under the hev1 prefix when hvc1 is not exposed', async () => {
+  const browser = browserFixture([], true, {rejectCodecPrefix: 'hvc1'});
+  await browser.settle();
+  const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
+  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'hvc1.1.6.L123.B0', width: 1182, height: 920})});
+  const decoder = browser.decoders.at(-1);
+  assert.equal(decoder.state, 'configured');
+  assert.equal(decoder.config.codec, 'hev1.1.6.L123.B0');
+});
+
 test('video timing reports packet-to-output and draw submission automatically without frame content', async () => {
   const browser = await playingBrowser({drawDelayMs: 2}), socket = browser.sockets[0], decoder = browser.decoders[0];
   socket.onmessage({data: videoPacket(2)}); browser.elapse(3);
@@ -436,9 +510,11 @@ test('video timing reports packet-to-output and draw submission automatically wi
   const timing = socket.sent.find(message => message.event === 'latency');
   assert.ok(timing);
   assert.deepEqual(Object.keys(timing).sort(), ['type', 'event', 'frameAgeMs', 'packetAgeMs', 'decodeQueue', 'closeCode', 'hidden',
-    'samples', 'decodeAvgUs', 'decodeMaxUs', 'drawAvgUs', 'drawMaxUs'].sort());
+    'samples', 'decodeAvgUs', 'decodeMaxUs', 'drawAvgUs', 'drawMaxUs', 'presentWaitAvgUs', 'presentWaitMaxUs',
+    'framesReceived', 'framesDrawn', 'windowMs', 'requestedFps', 'codec'].sort());
   assert.equal(timing.samples, 4); assert.equal(timing.decodeAvgUs, 2500); assert.equal(timing.decodeMaxUs, 7000);
   assert.equal(timing.drawAvgUs, 2000); assert.equal(timing.drawMaxUs, 2000);
+  assert.equal(timing.presentWaitAvgUs, 0); assert.equal(timing.presentWaitMaxUs, 0);
   assert.equal(browser.elements.get('panel').hidden, true);
   browser.tick(1);
   assert.equal(socket.sent.filter(message => message.event === 'latency').length, 1);
@@ -458,18 +534,35 @@ test('video timing forgets queued frames and samples when the decoder recovers',
   const timing = socket.sent.find(message => message.event === 'latency');
   assert.equal(timing.samples, 1); assert.equal(timing.decodeAvgUs, 2000); assert.equal(timing.decodeMaxUs, 2000);
 });
-test('short decode bursts keep every reference frame and only a bounded stale backlog recovers', async () => {
+test('existing timing reports include output-to-draw waiting for refresh and deadline draws', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+  socket.onmessage({data: videoPacket(2)});
+  decoder.callbacks.output({timestamp: 2, close() {}});
+  browser.runAnimationFrame(10);
+  socket.onmessage({data: videoPacket(3)});
+  decoder.callbacks.output({timestamp: 3, close() {}});
+  browser.elapse(50); browser.runTimer(50);
+  browser.elapse(4940); socket.onmessage({data: JSON.stringify({type: 'pong'})}); browser.tick(0);
+  const timing = socket.sent.find(message => message.event === 'latency');
+  assert.equal(timing.samples, 3);
+  assert.equal(timing.presentWaitAvgUs, 20000);
+  assert.equal(timing.presentWaitMaxUs, 50000);
+  assert.equal(socket.sent.filter(message => message.event === 'latency').length, 1);
+});
+test('short decode bursts keep every reference frame until the pending-frame ceiling requires recovery', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
   decoder.decodeQueueSize = 4;
   for (let timestamp = 2; timestamp <= 10; timestamp++) socket.onmessage({data: videoPacket(timestamp)});
   assert.equal(decoder.chunks.length, 10);
   assert.equal(socket.sent.some(message => message.event === 'decode_backpressure'), false);
-  browser.elapse(149);
-  socket.onmessage({data: videoPacket(11)});
-  assert.equal(decoder.chunks.length, 11);
-  browser.elapse(1); socket.onmessage({data: videoPacket(12)});
-  assert.equal(decoder.chunks.length, 11);
+  browser.elapse(500);
+  for (let timestamp = 11; timestamp <= 13; timestamp++) socket.onmessage({data: videoPacket(timestamp)});
+  assert.equal(decoder.chunks.length, 13);
+  assert.equal(socket.sent.some(message => message.event === 'decode_backpressure'), false);
+  socket.onmessage({data: videoPacket(14)});
+  assert.equal(decoder.chunks.length, 13);
   assert.equal(socket.sent.filter(message => message.event === 'decode_backpressure').length, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'keyframe').at(-1).reset, true);
   assert.equal(socket.readyState, 1);
   let closed = 0;
   decoder.callbacks.output({timestamp: 10, close() { closed++; }});
@@ -493,7 +586,8 @@ test('an unsupported decoder pauses automatic retries until the user retries', a
   assert.equal(browser.requests.length, 1);
   assert.deepEqual(browser.pendingTimers(), []);
   browser.elements.get('retry').onclick(); await browser.settle();
-  assert.equal(browser.requests.length, 2); assert.equal(browser.sockets.length, 2);
+  // A manual retry reuses the session cookie and only reopens the stream.
+  assert.equal(browser.requests.length, 1); assert.equal(browser.sockets.length, 2);
 });
 test('a synchronous unsupported configuration produces the same actionable pause', async () => {
   const browser = browserFixture([], true, {configureError: {name: 'NotSupportedError'}});
@@ -524,8 +618,9 @@ test('transient decoder failures still reconnect automatically', async () => {
   const browser = await playingBrowser();
   browser.decoders[0].callbacks.error({name: 'EncodingError'});
   assert.equal(browser.sockets[0].readyState, 3);
-  browser.runTimer(500); await browser.settle();
-  assert.equal(browser.requests.length, 2); assert.equal(browser.sockets.length, 2);
+  browser.runTimer(0); await browser.settle();
+  // The decoder is replaced, but the session cookie keeps the reconnect on the stream only.
+  assert.equal(browser.requests.length, 1); assert.equal(browser.sockets.length, 2);
 });
 test('an unresponsive stream reconnects after a bounded heartbeat grace without a close event', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0];
@@ -537,8 +632,8 @@ test('an unresponsive stream reconnects after a bounded heartbeat grace without 
   assert.equal(socket.readyState, 3); assert.equal(socket.onclose, null);
   assert.equal(browser.elements.get('heading').textContent, 'Reconnecting…');
   assert.equal(browser.elements.get('error').hidden, true);
-  browser.runTimer(500); await browser.settle();
-  assert.equal(browser.requests.length, 2); assert.equal(browser.sockets.length, 2);
+  browser.runTimer(0); await browser.settle();
+  assert.equal(browser.requests.length, 1); assert.equal(browser.sockets.length, 2);
 });
 test('a responsive server can wait for CarPlay without repeatedly closing its browser', async () => {
   const browser = browserFixture(); await browser.settle();
@@ -548,28 +643,82 @@ test('a responsive server can wait for CarPlay without repeatedly closing its br
   }
   assert.equal(socket.readyState, 1); assert.equal(browser.requests.length, 1);
   assert.ok(socket.sent.filter(message => message.type === 'keyframe').length > 2);
-  assert.equal(socket.sent.filter(message => message.event === 'video_wait').length, 1);
+  assert.equal(socket.sent.filter(message => message.event === 'video_wait').length, 0);
   browser.tick(8000); assert.equal(socket.readyState, 3);
 });
-test('upstream video pause recovers on the same connection and never shows a stale picture', async () => {
+test('a quiet CarPlay source keeps its picture and decoder while the server remains responsive', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
-  for (let second = 0; second < 20; second++) {
-    socket.onmessage({data: JSON.stringify({type: 'pong'})}); browser.tick(1000);
+  for (let second = 0; second < 6; second++) {
+    socket.onmessage({data: JSON.stringify({type: 'status', message: 'CarPlay connected', videoReady: true})});
+    browser.tick(1000);
   }
   assert.equal(socket.readyState, 1); assert.equal(browser.requests.length, 1);
-  assert.equal(browser.elements.get('screen').hidden, true);
-  assert.equal(browser.elements.get('heading').textContent, 'Reconnecting…');
+  assert.equal(decoder.state, 'configured'); assert.equal(decoder.resets || 0, 0);
+  assert.equal(browser.elements.get('screen').hidden, false);
+  assert.equal(browser.elements.get('panel').hidden, true);
+  assert.equal(browser.document.body.classList.contains('playing'), true);
+  assert.ok(socket.sent.filter(message => message.type === 'keyframe').length > 1);
+  assert.ok(socket.sent.filter(message => message.type === 'keyframe').every(message => message.reset === false));
+  assert.equal(socket.sent.filter(message => message.event === 'video_wait').length, 0);
   browser.drawFrame(decoder, {timestamp: 2, close() {}});
   assert.equal(browser.elements.get('screen').hidden, false); assert.equal(browser.elements.get('panel').hidden, true);
-  assert.equal(socket.sent.at(-1).event, 'video_resumed');
+  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 2);
+  assert.equal(socket.sent.filter(message => message.event === 'video_resumed').length, 0);
+});
+test('arriving packets with no decoder output still recover and hide a stalled picture until a fresh IDR draws', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+  socket.onmessage({data: videoPacket(2, false)});
+  browser.tick(1000);
+  socket.onmessage({data: videoPacket(3, false)});
+  browser.tick(1000);
+  assert.equal(decoder.resets, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'keyframe').at(-1).reset, true);
+  assert.equal(socket.sent.filter(message => message.event === 'video_wait').length, 1);
+  socket.onmessage({data: JSON.stringify({type: 'pong'})}); browser.tick(1000);
+  assert.equal(browser.elements.get('screen').hidden, true);
+  assert.equal(browser.elements.get('panel').hidden, false);
+  const decoded = decoder.chunks.length;
+  socket.onmessage({data: videoPacket(4, false)});
+  assert.equal(decoder.chunks.length, decoded);
+  browser.drawFrame(decoder, {timestamp: 5, close() {}});
+  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 5);
+  assert.equal(socket.sent.filter(message => message.event === 'video_resumed').length, 1);
+  assert.equal(browser.elements.get('panel').hidden, true);
+  assert.equal(browser.elements.get('screen').hidden, false);
+  assert.equal(socket.readyState, 1);
+});
+test('a decoded frame waiting for a stalled browser refresh is not mistaken for a quiet source', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+  let closed = 0;
+  socket.onmessage({data: videoPacket(2, false)});
+  decoder.callbacks.output({timestamp: 2, close() { closed++; }});
+  browser.tick(2000);
+  assert.equal(decoder.resets, 1);
+  assert.equal(closed, 1);
+  assert.equal(browser.pendingAnimationFrames(), 0);
+  assert.equal(socket.sent.filter(message => message.event === 'video_wait').length, 1);
+  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 2);
+  browser.drawFrame(decoder, {timestamp: 3, close() {}});
+  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 3);
+  assert.equal(socket.readyState, 1);
 });
 test('server recovery resets the decoder and requests a keyframe without disconnecting', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+  socket.onmessage({data: videoPacket(2, false)});
   browser.tick(1600);
+  assert.equal(decoder.resets || 0, 0);
   socket.onmessage({data: JSON.stringify({type: 'recover'})});
   assert.equal(socket.readyState, 1); assert.equal(browser.decoders.length, 1);
-  assert.equal(decoder.state, 'configured'); assert.equal(socket.sent.at(-1).type, 'keyframe');
+  assert.equal(decoder.resets, 1);
+  assert.equal(decoder.state, 'configured');
+  assert.deepEqual(socket.sent.at(-1), {type: 'keyframe', reset: false});
   assert.equal(socket.sent.some(message => message.event === 'server_recovery'), true);
+  const decoded = decoder.chunks.length;
+  socket.onmessage({data: videoPacket(3, false)});
+  assert.equal(decoder.chunks.length, decoded);
+  browser.drawFrame(decoder, {timestamp: 4, close() {}});
+  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 4);
+  assert.equal(browser.elements.get('panel').hidden, true);
 });
 test('a stuck decoder with arriving packets eventually reconnects rather than showing a frozen frame', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0];
@@ -579,7 +728,7 @@ test('a stuck decoder with arriving packets eventually reconnects rather than sh
   }
   assert.equal(socket.readyState, 3);
   assert.equal(socket.sent.some(message => message.event === 'decoder_timeout'), true);
-  browser.runTimer(500); await browser.settle(); assert.equal(browser.sockets.length, 2);
+  browser.runTimer(0); await browser.settle(); assert.equal(browser.sockets.length, 2);
 });
 test('decoder diagnostic messages contain a fixed category rather than the error text', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0];
@@ -601,7 +750,7 @@ test('fresh video cancels stall recovery and a hidden page gets grace on return'
 test('a hanging WebSocket handshake retries even when close never emits an event', async () => {
   const browser = browserFixture(); await browser.settle();
   browser.runTimer(10000); assert.equal(browser.sockets[0].readyState, 3);
-  browser.runTimer(500); await browser.settle(); assert.equal(browser.sockets.length, 2);
+  browser.runTimer(0); await browser.settle(); assert.equal(browser.sockets.length, 2);
 });
 test('lost capture, context menu and blur clear unfinished gestures so the next tap works', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], canvas = browser.elements.get('screen');
@@ -622,7 +771,7 @@ test('reconnection discards a gesture started on the previous stream', async () 
   const browser = await playingBrowser(), canvas = browser.elements.get('screen');
   canvas.dispatch('pointerdown', {pointerId: 1, button: 0, clientX: 100, clientY: 100, preventDefault() {}});
   browser.tick(8000); assert.equal(canvas.hasPointerCapture(1), false);
-  browser.runTimer(500); await browser.settle();
+  browser.runTimer(0); await browser.settle();
   const socket = browser.sockets[1]; socket.readyState = 1; socket.onopen();
   canvas.dispatch('pointerup', {pointerId: 1, clientX: 120, clientY: 120});
   assert.equal(socket.sent.filter(message => message.type === 'gesture').length, 0);
@@ -809,9 +958,10 @@ test('render backing uses the measured Tesla viewport and physical density witho
   for (const values of [[0, 920, 1, 2880, 2160], [1182, 920, NaN, 2880, 2160],
       [1182, Infinity, 1, 2880, 2160], [1182, 920, 1, 0, 2160]]) assert.equal(renderViewport(...values), null);
 });
-test('a decoded burst presents only its latest frame on the next refresh and closes every retained frame', async () => {
+test('a decoded burst credits every decoded frame immediately and presents only its latest frame', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
   const drawnBefore = browser.draws.length, ackBefore = socket.sent.filter(message => message.type === 'ack').length;
+  const presentedBefore = socket.sent.filter(message => message.type === 'presented').length;
   const closed = [];
   for (const timestamp of [2, 3, 4]) {
     socket.onmessage({data: videoPacket(timestamp, false)});
@@ -821,12 +971,13 @@ test('a decoded burst presents only its latest frame on the next refresh and clo
   assert.deepEqual(closed, [2, 3]);
   assert.equal(browser.pendingAnimationFrames(), 1);
   assert.equal(browser.draws.length, drawnBefore);
-  assert.equal(socket.sent.filter(message => message.type === 'ack').length, ackBefore);
+  assert.deepEqual(socket.sent.filter(message => message.type === 'ack').slice(ackBefore).map(value => value.pts), [2, 3, 4]);
+  assert.equal(socket.sent.filter(message => message.type === 'presented').length, presentedBefore);
   browser.runAnimationFrame();
   assert.equal(browser.draws.length, drawnBefore + 1);
   assert.equal(browser.draws.at(-1)[0].timestamp, 4);
   assert.deepEqual(closed, [2, 3, 4]);
-  assert.deepEqual(socket.sent.filter(message => message.type === 'ack').slice(ackBefore), [{type: 'ack', pts: 4}]);
+  assert.deepEqual(socket.sent.filter(message => message.type === 'presented').slice(-1), [{type: 'presented', pts: 4}]);
   assert.equal(browser.pendingAnimationFrames(), 0);
 });
 test('newest-frame cumulative acknowledgements keep a three-credit stream moving through repeated bursts', async () => {
@@ -851,7 +1002,7 @@ test('newest-frame cumulative acknowledgements keep a three-credit stream moving
   assert.equal(browser.draws.length, 21);
   assert.equal(socket.readyState, 1);
 });
-test('first-frame success and acknowledgements wait for the actual draw, not decoder output', async () => {
+test('decode releases credit at once while first-frame success waits for the actual draw', async () => {
   const events = [], browser = browserFixture([], true, {}, {telemetry: {event: (name, attributes) => events.push({name, attributes})}});
   await browser.settle();
   const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
@@ -859,11 +1010,12 @@ test('first-frame success and acknowledgements wait for the actual draw, not dec
   socket.onmessage({data: videoPacket(1)});
   browser.decoders[0].callbacks.output({timestamp: 1, close() {}});
   assert.equal(events.some(event => event.name === 'browser_first_frame'), false);
-  assert.equal(socket.sent.some(message => message.type === 'ack'), false);
+  assert.deepEqual(socket.sent.filter(message => message.type === 'ack').map(message => message.pts), [1]);
+  assert.equal(socket.sent.some(message => message.type === 'presented'), false);
   assert.equal(browser.elements.get('panel').hidden, false);
   browser.runAnimationFrame();
   assert.equal(events.filter(event => event.name === 'browser_first_frame').length, 1);
-  assert.equal(socket.sent.filter(message => message.type === 'ack').length, 1);
+  assert.deepEqual(socket.sent.filter(message => message.type === 'presented').map(message => message.pts), [1]);
   assert.equal(browser.elements.get('panel').hidden, true);
 });
 test('rAF waiting is excluded from decode and draw timings, while superseded outputs still count as decoded', async () => {
@@ -886,21 +1038,77 @@ test('rAF waiting is excluded from decode and draw timings, while superseded out
   const summary = events.find(event => event.name === 'performance_summary').attributes;
   assert.equal(summary.decodedFrames, 4); assert.equal(summary.drawnFrames, 2); assert.equal(summary.droppedFrames, 2);
 });
-test('a failed deferred draw closes its frame and never emits an ACK or first-frame success', async () => {
-  const events = [], options = {drawError: {name: 'OperationError'},
-    telemetry: {event: (name, attributes) => events.push({name, attributes})}};
-  const browser = browserFixture([], true, {}, options); await browser.settle();
-  const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
-  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
-  socket.onmessage({data: videoPacket(1)});
-  let closed = 0;
-  browser.decoders[0].callbacks.output({timestamp: 1, close() { closed++; }});
-  assert.doesNotThrow(() => browser.runAnimationFrame());
-  assert.equal(closed, 1); assert.equal(socket.readyState, 3);
-  assert.equal(socket.sent.some(message => message.type === 'ack'), false);
-  assert.equal(events.some(event => event.name === 'browser_first_frame'), false);
-  assert.ok(events.some(event => event.name === 'browser_error' && event.attributes.reason === 'decoder_error'));
-  assert.equal(browser.pendingAnimationFrames(), 0);
+test('a failed refresh or deadline draw closes its frame and never reports presentation', async () => {
+  for (const winner of ['refresh', 'deadline']) {
+    const events = [], options = {drawError: {name: 'OperationError'},
+      telemetry: {event: (name, attributes) => events.push({name, attributes})}};
+    const browser = browserFixture([], true, {}, options); await browser.settle();
+    const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
+    socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
+    socket.onmessage({data: videoPacket(1)});
+    let closed = 0;
+    browser.decoders[0].callbacks.output({timestamp: 1, close() { closed++; }});
+    assert.doesNotThrow(() => winner === 'refresh' ? browser.runAnimationFrame() : browser.runTimer(50));
+    assert.equal(closed, 1, winner); assert.equal(socket.readyState, 3, winner);
+    // The decoder already produced the frame, so its credit was released before the draw failed.
+    assert.deepEqual(socket.sent.filter(message => message.type === 'ack').map(message => message.pts), [1], winner);
+    assert.equal(socket.sent.some(message => message.type === 'presented'), false, winner);
+    assert.equal(events.some(event => event.name === 'browser_first_frame'), false, winner);
+    assert.ok(events.some(event => event.name === 'browser_error' && event.attributes.reason === 'decoder_error'), winner);
+    assert.equal(browser.pendingAnimationFrames(), 0, winner);
+    assert.equal(browser.pendingTimers().includes(50), false, winner);
+  }
+});
+test('one visible presentation deadline draws the latest frame despite 200–1200 ms refresh delays', async () => {
+  for (const refreshDelay of [200, 600, 1200]) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+    const presentedBefore = socket.sent.filter(message => message.type === 'presented').length;
+    const closed = [];
+    socket.onmessage({data: videoPacket(2)});
+    decoder.callbacks.output({timestamp: 2, close() { closed.push(2); }});
+    const [delayedRefresh] = browser.animationCallbacks();
+    browser.elapse(25);
+    socket.onmessage({data: videoPacket(3, false)});
+    decoder.callbacks.output({timestamp: 3, close() { closed.push(3); }});
+    assert.deepEqual(closed, [2], refreshDelay);
+    assert.equal(browser.pendingTimers().filter(delay => delay === 50).length, 1, refreshDelay);
+    assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 3, refreshDelay);
+    assert.equal(socket.sent.filter(message => message.type === 'presented').length, presentedBefore, refreshDelay);
+    browser.elapse(25); browser.runTimer(50);
+    assert.equal(browser.draws.at(-1)[0].timestamp, 3, refreshDelay);
+    assert.equal(socket.sent.filter(message => message.type === 'presented').at(-1).pts, 3, refreshDelay);
+    assert.deepEqual(closed, [2, 3], refreshDelay);
+    assert.equal(browser.pendingAnimationFrames(), 0, refreshDelay);
+    assert.equal(browser.pendingTimers().includes(50), false, refreshDelay);
+    const draws = browser.draws.length, acks = socket.sent.filter(message => message.type === 'ack').length;
+    browser.elapse(refreshDelay - 50); delayedRefresh();
+    assert.equal(browser.draws.length, draws, refreshDelay);
+    assert.equal(socket.sent.filter(message => message.type === 'ack').length, acks, refreshDelay);
+    assert.equal(decoder.resets || 0, 0, refreshDelay);
+    assert.equal(socket.readyState, 1, refreshDelay);
+  }
+});
+test('either presentation winner cancels its loser and stale callbacks cannot consume the next job', async () => {
+  for (const winner of ['refresh', 'deadline']) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+    socket.onmessage({data: videoPacket(2)});
+    decoder.callbacks.output({timestamp: 2, close() {}});
+    const [refresh] = browser.animationCallbacks(), [deadline] = browser.timerCallbacks(50);
+    if (winner === 'refresh') browser.runAnimationFrame();
+    else { browser.elapse(50); browser.runTimer(50); }
+    assert.equal(socket.sent.filter(message => message.type === 'presented').at(-1).pts, 2, winner);
+    assert.equal(browser.pendingTimers().includes(50), false, winner);
+    assert.equal(browser.pendingAnimationFrames(), 0, winner);
+    socket.onmessage({data: videoPacket(3, false)});
+    decoder.callbacks.output({timestamp: 3, close() {}});
+    refresh(); deadline();
+    assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 3, winner);
+    assert.equal(socket.sent.filter(message => message.type === 'presented').at(-1).pts, 2, winner);
+    assert.equal(browser.pendingAnimationFrames(), 1, winner);
+    assert.equal(browser.pendingTimers().filter(delay => delay === 50).length, 1, winner);
+    browser.runAnimationFrame();
+    assert.equal(socket.sent.filter(message => message.type === 'presented').at(-1).pts, 3, winner);
+  }
 });
 test('resizing waits for a new frame before changing backing storage and preserves encoded crop and touch coordinates', async () => {
   const browser = await playingBrowser(), socket = browser.sockets[0], canvas = browser.elements.get('screen');
@@ -923,13 +1131,13 @@ test('resizing waits for a new frame before changing backing storage and preserv
   assert.deepEqual(socket.sent.at(-1), {type: 'touch', action: 'down', x: 1480 / 2880, y: 1100 / 2160});
   assert.equal(browser.sockets.length, 1); assert.equal(browser.requests.length, 1);
 });
-test('pending frames are closed and stale refresh callbacks cannot draw or ACK after reset, format or leaving', async () => {
+test('pending frames are closed and stale refresh callbacks cannot draw or report presentation after reset, format or leaving', async () => {
   for (const transition of ['recover', 'format', 'disconnect', 'hidden', 'pagehide']) {
     const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
     socket.onmessage({data: videoPacket(2)});
     let closed = 0;
     decoder.callbacks.output({timestamp: 2, close() { closed++; }});
-    const [staleCallback] = browser.animationCallbacks(), draws = browser.draws.length;
+    const [staleCallback] = browser.animationCallbacks(), [staleDeadline] = browser.timerCallbacks(50), draws = browser.draws.length;
     const acknowledgements = socket.sent.filter(message => message.type === 'ack').length;
     if (transition === 'recover') socket.onmessage({data: JSON.stringify({type: 'recover'})});
     else if (transition === 'format') socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1600, height: 900})});
@@ -937,34 +1145,39 @@ test('pending frames are closed and stale refresh callbacks cannot draw or ACK a
     else if (transition === 'hidden') { browser.document.hidden = true; browser.document.dispatch('visibilitychange'); }
     else browser.window.dispatch('pagehide');
     assert.equal(closed, 1, transition); assert.equal(browser.pendingAnimationFrames(), 0, transition);
-    staleCallback();
+    assert.equal(browser.pendingTimers().includes(50), false, transition);
+    staleCallback(); staleDeadline();
     assert.equal(browser.draws.length, draws, transition);
     assert.equal(socket.sent.filter(message => message.type === 'ack').length, acknowledgements, transition);
     if (transition === 'recover' || transition === 'format') {
       const current = browser.decoders.at(-1);
       socket.onmessage({data: videoPacket(3)}); current.callbacks.output({timestamp: 3, close() {}});
-      staleCallback();
+      staleCallback(); staleDeadline();
       assert.equal(browser.pendingAnimationFrames(), 1, transition);
+      assert.equal(browser.pendingTimers().filter(delay => delay === 50).length, 1, transition);
       browser.runAnimationFrame();
       assert.equal(browser.draws.at(-1)[0].timestamp, 3, transition);
       assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 3, transition);
     }
   }
 });
-test('a decoder with no output gets one bounded progress deadline even when server credits stop new packets', async () => {
-  const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
-  socket.onmessage({data: videoPacket(2, false)});
-  browser.elapse(50); socket.onmessage({data: videoPacket(3, false)});
-  assert.equal(browser.pendingTimers().filter(delay => delay <= 150).length, 1);
-  browser.elapse(100); browser.runTimer(100);
-  assert.equal(socket.sent.filter(message => message.event === 'decode_backpressure').length, 1);
-  assert.equal(socket.sent.at(-1).type, 'keyframe'); assert.equal(socket.readyState, 1);
-  socket.onmessage({data: videoPacket(4, false)});
-  assert.equal(decoder.chunks.length, 3);
-  socket.onmessage({data: videoPacket(5)}); decoder.callbacks.output({timestamp: 5, close() {}});
-  assert.equal(browser.pendingTimers().some(delay => delay <= 1000), false);
-  browser.runAnimationFrame();
-  assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 5);
+test('healthy decoder output survives 200–500 ms browser delays without resetting its reference chain', async () => {
+  for (const pause of [200, 350, 500]) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+    const requests = socket.sent.filter(message => message.type === 'keyframe').length;
+    socket.onmessage({data: videoPacket(2, false)});
+    browser.elapse(pause);
+    // Expired timers may run before a decoder output callback after a busy browser task.
+    for (const delay of browser.pendingTimers().filter(delay => delay <= pause)) browser.runTimer(delay);
+    decoder.callbacks.output({timestamp: 2, close() {}});
+    browser.runAnimationFrame();
+    assert.equal(decoder.resets || 0, 0, pause);
+    assert.equal(socket.sent.some(message => message.event === 'decode_backpressure'), false, pause);
+    assert.equal(socket.sent.filter(message => message.type === 'keyframe').length, requests, pause);
+    assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 2, pause);
+    assert.equal(browser.elements.get('panel').hidden, true, pause);
+    assert.equal(socket.readyState, 1, pause);
+  }
 });
 test('decode request and compressed byte ceilings reset instead of dropping a reference and continuing a broken chain', async () => {
   for (const limit of ['requests', 'bytes']) {
@@ -998,34 +1211,35 @@ test('hidden pages discard decoded pictures and do not decode again until a visi
   browser.runAnimationFrame();
   assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 5);
 });
-test('a browser without refresh callbacks retains immediate rendering and post-draw acknowledgements', async () => {
+test('a browser without refresh callbacks retains immediate rendering and presentation reports', async () => {
   const browser = await playingBrowser({animationFrames: false}), socket = browser.sockets[0], decoder = browser.decoders[0];
   socket.onmessage({data: videoPacket(2, false)});
   decoder.callbacks.output({timestamp: 2, close() {}});
   assert.equal(browser.draws.at(-1)[0].timestamp, 2);
   assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 2);
+  assert.equal(socket.sent.filter(message => message.type === 'presented').at(-1).pts, 2);
   assert.equal(browser.pendingAnimationFrames(), 0);
 });
 
 
-test('a newly configured decoder gets a bounded cold-start allowance before the active-frame deadline applies', async () => {
-  const browser = browserFixture(); await browser.settle();
-  const socket = browser.sockets[0]; socket.readyState = 1; socket.onopen();
-  socket.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.640033', width: 2880, height: 2160})});
-  const decoder = browser.decoders[0];
-  socket.onmessage({data: videoPacket(1)});
-  assert.ok(browser.pendingTimers().includes(1000));
-  browser.elapse(350); decoder.callbacks.output({timestamp: 1, close() {}}); browser.runAnimationFrame();
-  assert.equal(socket.sent.some(message => message.event === 'decode_backpressure'), false);
-  socket.onmessage({data: videoPacket(2, false)});
-  assert.ok(browser.pendingTimers().includes(150));
-  browser.elapse(150); browser.runTimer(150);
-  assert.equal(socket.sent.filter(message => message.event === 'decode_backpressure').length, 1);
-  socket.onmessage({data: videoPacket(3)});
-  assert.ok(browser.pendingTimers().includes(1000));
-  browser.elapse(1000); browser.runTimer(1000);
-  assert.equal(socket.sent.filter(message => message.event === 'decode_backpressure').length, 2);
-  assert.equal(socket.readyState, 1);
+test('a new packet after a short browser pause preserves pending reference frames and cumulative acknowledgements', async () => {
+  for (const pause of [200, 500]) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+    const requests = socket.sent.filter(message => message.type === 'keyframe').length;
+    socket.onmessage({data: videoPacket(2, false)});
+    browser.elapse(pause);
+    socket.onmessage({data: videoPacket(3, false)});
+    assert.deepEqual(decoder.chunks.map(chunk => chunk.timestamp), [1, 2, 3], pause);
+    decoder.callbacks.output({timestamp: 2, close() {}});
+    decoder.callbacks.output({timestamp: 3, close() {}});
+    browser.runAnimationFrame();
+    assert.equal(decoder.resets || 0, 0, pause);
+    assert.equal(socket.sent.some(message => message.event === 'decode_backpressure'), false, pause);
+    assert.equal(socket.sent.filter(message => message.type === 'keyframe').length, requests, pause);
+    assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 3, pause);
+    assert.equal(browser.elements.get('panel').hidden, true, pause);
+    assert.equal(socket.readyState, 1, pause);
+  }
 });
 
 
@@ -1069,4 +1283,77 @@ test('a newly drawn recovery frame cancels the deferred keyframe request instead
   browser.elapse(500);
   assert.equal(socket.sent.filter(message => message.type === 'keyframe').length, requests);
   assert.equal(socket.sent.filter(message => message.type === 'ack').at(-1).pts, 2);
+});
+
+test('congested movement retains only its latest point and never replays after the gesture ends', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], canvas = browser.elements.get('screen');
+  canvas.dispatch('pointerdown', {pointerId: 1, button: 0, clientX: 0, clientY: 0, preventDefault() {}});
+  socket.bufferedAmount = 16 * 1024;
+  for (let i = 1; i <= 100; i++) {
+    browser.elapse(8);
+    canvas.dispatch('pointermove', {pointerId: 1, clientX: i * 10, clientY: 540});
+  }
+  assert.deepEqual(socket.sent.filter(message => message.type === 'touch').map(message => message.action), ['down']);
+  assert.equal(socket.readyState, 1);
+  socket.bufferedAmount = 0;
+  canvas.dispatch('pointerup', {pointerId: 1, clientX: 1440, clientY: 810});
+  assert.deepEqual(socket.sent.filter(message => message.type === 'touch').slice(-2), [
+    {type: 'touch', action: 'move', x: 0.75, y: 0.75}, {type: 'touch', action: 'up'}
+  ]);
+  assert.equal(browser.pendingTimers().includes(8), false);
+  canvas.dispatch('pointermove', {pointerId: 1, clientX: 1800, clientY: 1000});
+  assert.equal(socket.sent.filter(message => message.type === 'touch').length, 3);
+});
+
+test('a release that cannot be queued abandons its connection and cannot leak input into the next gesture', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], canvas = browser.elements.get('screen');
+  canvas.dispatch('pointerdown', {pointerId: 1, button: 0, clientX: 0, clientY: 0, preventDefault() {}});
+  socket.bufferedAmount = 16 * 1024;
+  canvas.dispatch('pointermove', {pointerId: 1, clientX: 960, clientY: 540});
+  canvas.dispatch('pointerup', {pointerId: 1, clientX: 1440, clientY: 810});
+  assert.equal(socket.readyState, 3);
+  assert.equal(canvas.hasPointerCapture(1), false);
+  assert.equal(browser.elements.get('panel').hidden, false);
+  assert.deepEqual(socket.sent.filter(message => message.type === 'touch').map(message => message.action), ['down']);
+  socket.bufferedAmount = 0;
+  browser.runTimer(0); await browser.settle();
+  const next = browser.sockets[1]; next.readyState = 1; next.onopen();
+  next.onmessage({data: JSON.stringify({type: 'format', codec: 'avc1.42C01F', width: 1920, height: 1080})});
+  canvas.dispatch('pointerdown', {pointerId: 2, button: 0, clientX: 480, clientY: 270, preventDefault() {}});
+  canvas.dispatch('pointerup', {pointerId: 2, clientX: 480, clientY: 270});
+  assert.deepEqual(next.sent.filter(message => message.type === 'touch'), [
+    {type: 'touch', action: 'down', x: 0.25, y: 0.25}, {type: 'touch', action: 'up'}
+  ]);
+});
+
+test('congested diagnostics are discarded while critical send failures preserve the reconnect screen', async () => {
+  const browser = await playingBrowser(), socket = browser.sockets[0], decoder = browser.decoders[0];
+  const sent = socket.sent.length;
+  socket.bufferedAmount = 16 * 1024;
+  socket.onerror();
+  assert.equal(socket.sent.length, sent);
+  assert.equal(socket.readyState, 1);
+  let closed = 0;
+  browser.drawFrame(decoder, {timestamp: 2, close() { closed++; }});
+  assert.equal(closed, 1);
+  assert.equal(socket.readyState, 3);
+  assert.equal(browser.elements.get('panel').hidden, false);
+  assert.equal(browser.elements.get('screen').hidden, true);
+  assert.equal(browser.document.body.classList.contains('playing'), false);
+});
+
+test('a congested new touch or a thrown socket write cancels local capture without orphaned moves', async () => {
+  for (const failure of ['buffer', 'write']) {
+    const browser = await playingBrowser(), socket = browser.sockets[0], canvas = browser.elements.get('screen');
+    if (failure === 'buffer') socket.bufferedAmount = 16 * 1024;
+    else socket.send = () => { throw new Error('Transport failed'); };
+    assert.doesNotThrow(() => canvas.dispatch('pointerdown', {
+      pointerId: 1, button: 0, clientX: 100, clientY: 100, preventDefault() {}
+    }));
+    assert.equal(socket.readyState, 3, failure);
+    assert.equal(canvas.hasPointerCapture(1), false, failure);
+    assert.equal(browser.elements.get('panel').hidden, false, failure);
+    canvas.dispatch('pointermove', {pointerId: 1, clientX: 200, clientY: 200});
+    assert.equal(socket.sent.filter(message => message.type === 'touch').length, 0, failure);
+  }
 });

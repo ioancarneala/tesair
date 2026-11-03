@@ -1482,7 +1482,8 @@ class DiPlayActivity : ComponentActivity() {
             val browserResolutionPreview = if (browserMode) label("", 14, MUTED) else null
             fun updateBrowserResolutionPreview() {
                 browserResolutionPreview?.let { preview ->
-                    val canvas = BrowserCarPlayLayout.canvasSize(BrowserCarPlayViewport.load(this).first,
+                    val viewport = BrowserCarPlayViewport.load(this)
+                    val canvas = BrowserCarPlayLayout.canvasSize(viewport.first, viewport.second,
                         AirPlayPersistence.loadBrowserResolutionPercent(this))
                     preview.text = getString(R.string.settings_browser_resolution_preview, canvas.width, canvas.height)
                 }

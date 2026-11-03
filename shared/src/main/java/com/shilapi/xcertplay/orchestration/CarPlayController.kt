@@ -760,11 +760,19 @@ class CarPlayController(
         }
     }
 
-    /** Waits for USB, iAP2, MFi and VPN teardown; intended for a non-main lifecycle thread. */
+    /** Waits for cleanup and its worker pools; intended for a non-main lifecycle thread. */
     fun awaitClosed(timeoutMillis: Long): Boolean {
         require(timeoutMillis >= 0) { "timeoutMillis must not be negative" }
+        val started = System.nanoTime()
+        val budget = TimeUnit.MILLISECONDS.toNanos(timeoutMillis)
+        fun remainingNanos() = (budget - (System.nanoTime() - started)).coerceAtLeast(0L)
         return try {
-            teardownComplete.await(timeoutMillis, TimeUnit.MILLISECONDS)
+            if (!teardownComplete.await(remainingNanos(), TimeUnit.NANOSECONDS)) return false
+            // A cleanup thread can finish its bounded wait before interrupted work
+            // actually exits. Never let that timeout authorize a second receiver.
+            listOf(executor, touchExecutor, tunnelExecutor, startupTimer).all { worker ->
+                worker.isTerminated || worker.awaitTermination(remainingNanos(), TimeUnit.NANOSECONDS)
+            }
         } catch (_: InterruptedException) {
             Thread.currentThread().interrupt()
             false

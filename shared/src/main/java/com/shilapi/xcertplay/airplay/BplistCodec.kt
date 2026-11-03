@@ -8,24 +8,33 @@ package com.shilapi.xcertplay.airplay
  * serialized in insertion order, matching the reference implementation this stack targets.
  */
 object BplistCodec {
+    private const val MAX_INPUT_BYTES = 16 * 1024 * 1024
+    private const val MAX_OBJECTS = 1_000_000
+    private const val MAX_CONTAINER = 100_000
+    private const val MAX_DEPTH = 64
     private val magic = "bplist00".toByteArray(Charsets.US_ASCII)
 
     fun decode(bytes: ByteArray): Any? {
-        require(bytes.size >= 40) { "bplist: too short" }
+        require(bytes.size in 40..MAX_INPUT_BYTES) { "bplist: invalid size" }
         require(bytes.copyOfRange(0, magic.size).contentEquals(magic)) { "bplist: bad magic" }
 
         val trailer = bytes.size - 32
         val offsetSize = bytes[trailer + 6].toInt() and 0xff
         val refSize = bytes[trailer + 7].toInt() and 0xff
-        val numObjects = readBigEndianLong(bytes, (trailer + 8).toLong(), 8).toInt()
-        val topObject = readBigEndianLong(bytes, (trailer + 16).toLong(), 8).toInt()
+        require(offsetSize in 1..8 && refSize in 1..8) { "bplist: invalid trailer sizes" }
+        val numObjects = readBigEndianLong(bytes, (trailer + 8).toLong(), 8)
+        val topObject = readBigEndianLong(bytes, (trailer + 16).toLong(), 8)
         val offsetTable = readBigEndianLong(bytes, (trailer + 24).toLong(), 8)
+        require(numObjects in 1..MAX_OBJECTS.toLong()) { "bplist: invalid object count" }
+        require(topObject in 0 until numObjects) { "bplist: invalid top object" }
+        require(offsetTable in 8..<trailer.toLong()) { "bplist: invalid offset table" }
+        require(offsetTable + numObjects * offsetSize <= trailer.toLong()) { "bplist: offset table overflow" }
 
-        val offsets = LongArray(numObjects)
+        val offsets = LongArray(numObjects.toInt())
         for (index in offsets.indices) {
             offsets[index] = readBigEndianLong(bytes, offsetTable + index.toLong() * offsetSize, offsetSize)
         }
-        return readObject(bytes, offsets, refSize, topObject)
+        return readObject(bytes, offsets, refSize, topObject.toInt(), 0)
     }
 
     fun encode(root: Any?): ByteArray {
@@ -109,8 +118,12 @@ object BplistCodec {
         return concatBytes(*parts.toTypedArray())
     }
 
-    private fun readObject(bytes: ByteArray, offsets: LongArray, refSize: Int, index: Int): Any? {
-        var position = offsets[index].toInt()
+    private fun readObject(bytes: ByteArray, offsets: LongArray, refSize: Int, index: Int, depth: Int): Any? {
+        require(depth <= MAX_DEPTH) { "bplist: nesting too deep" }
+        require(index in offsets.indices) { "bplist: object index out of range" }
+        val start = offsets[index]
+        require(start >= 8 && start < bytes.size) { "bplist: object offset out of range" }
+        var position = start.toInt()
         val markerByte = bytes[position].toInt() and 0xff
         val type = markerByte ushr 4
         val nibble = markerByte and 0x0f
@@ -121,9 +134,11 @@ object BplistCodec {
             val sizeMarker = bytes[position].toInt() and 0xff
             position++
             val intBytes = 1 shl (sizeMarker and 0x0f)
-            val count = readBigEndianLong(bytes, position.toLong(), intBytes).toInt()
+            require(intBytes <= 8) { "bplist: invalid count width" }
+            val count = readBigEndianLong(bytes, position.toLong(), intBytes)
             position += intBytes
-            return count
+            require(count in 0..MAX_CONTAINER.toLong()) { "bplist: container too large" }
+            return count.toInt()
         }
 
         return when (type) {
@@ -151,36 +166,41 @@ object BplistCodec {
             )
             0x4 -> {
                 val count = readCount()
+                require(count <= bytes.size - position) { "bplist: data out of range" }
                 bytes.copyOfRange(position, position + count)
             }
             // UID (keyed archives): its integer value.
             0x8 -> readBigEndianLong(bytes, position.toLong(), nibble + 1)
             0x5 -> {
                 val count = readCount()
+                require(count <= bytes.size - position) { "bplist: string out of range" }
                 String(bytes, position, count, Charsets.US_ASCII)
             }
             0x6 -> {
                 val count = readCount()
+                require(count <= (bytes.size - position) / 2) { "bplist: string out of range" }
                 String(bytes, position, count * 2, Charsets.UTF_16BE)
             }
             0xa, 0xc -> {
                 val count = readCount()
+                require(count.toLong() * refSize <= (bytes.size - position).toLong()) { "bplist: array out of range" }
                 val array = ArrayList<Any?>(count)
                 for (i in 0 until count) {
                     val reference = readBigEndianLong(bytes, position + i.toLong() * refSize, refSize).toInt()
-                    array.add(readObject(bytes, offsets, refSize, reference))
+                    array.add(readObject(bytes, offsets, refSize, reference, depth + 1))
                 }
                 array
             }
             0xd -> {
                 val count = readCount()
+                require(2L * count * refSize <= (bytes.size - position).toLong()) { "bplist: dictionary out of range" }
                 val dict = LinkedHashMap<String, Any?>(count)
                 for (i in 0 until count) {
                     val keyReference = readBigEndianLong(bytes, position + i.toLong() * refSize, refSize).toInt()
                     val valueReference =
                         readBigEndianLong(bytes, position + (count + i).toLong() * refSize, refSize).toInt()
-                    dict[readObject(bytes, offsets, refSize, keyReference).toString()] =
-                        readObject(bytes, offsets, refSize, valueReference)
+                    dict[readObject(bytes, offsets, refSize, keyReference, depth + 1).toString()] =
+                        readObject(bytes, offsets, refSize, valueReference, depth + 1)
                 }
                 dict
             }
@@ -267,6 +287,7 @@ object BplistCodec {
     }
 
     private fun readBigEndianLong(bytes: ByteArray, offset: Long, size: Int): Long {
+        require(offset >= 0 && size in 1..8 && offset + size <= bytes.size.toLong()) { "bplist: read out of range" }
         var value = 0L
         var base = offset.toInt()
         for (index in 0 until size) {

@@ -14,6 +14,7 @@ class BrowserCarPlayIntegrationTest {
         var diagnostic: ((String) -> Unit)? = null
         override fun onVideoCodec(type: Int, codec: VideoCodec) { events += "codec:$type:$codec" }
         override fun onVideoConfig(type: Int, codecData: ByteArray) { events += "config:$type" }
+        override fun onVideoConfigRejected(type: Int) { events += "rejected:$type" }
         override fun onVideoFrame(type: Int, naluBytes: ByteArray, senderNanos: Long, arrivalNanos: Long) {
             events += "frame:$type:$senderNanos:$arrivalNanos"; frame = naluBytes
         }
@@ -79,6 +80,18 @@ class BrowserCarPlayIntegrationTest {
         assertEquals(1920 to 1080, BrowserCarPlayViewport.fit(1921, 1081))
         assertEquals(2560 to 1440, BrowserCarPlayViewport.fit(3840, 2160))
         assertEquals(1080 to 1920, BrowserCarPlayViewport.fit(1080, 1920))
+    }
+
+    @Test fun rejectedConfigurationReachesOnlyItsCurrentScreenOwner() {
+        val device = RecordingSink(); val browser = RecordingSink()
+        var current = true
+        val sink = BrowserCarPlayMediaSink(device, browser) { current }
+        sink.onVideoConfigRejected(110)
+        sink.onVideoConfigRejected(111)
+        current = false
+        sink.onVideoConfigRejected(110)
+        assertEquals(listOf("rejected:110"), browser.events)
+        assertEquals(listOf("rejected:111"), device.events)
     }
 
     @Test(expected = IllegalArgumentException::class)

@@ -17,6 +17,9 @@ import com.shilapi.xcertplay.hud.BydClusterMapPause
 import com.shilapi.xcertplay.hud.BydNavigationOutputs
 import com.shilapi.xcertplay.transport.Iap2IdentificationConfig
 import java.net.Socket
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.TimeUnit
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Test
@@ -104,6 +107,35 @@ class CarPlayControllerHostUiTest {
 
         assertTrue(context.activities.single().hasCategory(Intent.CATEGORY_HOME))
         assertEquals(1, hostRequests)
+    }
+
+    @Test fun cleanupCompletionDoesNotPermitReplacementWhileAnyWorkerStillRuns() {
+        for (name in listOf("executor", "touchExecutor", "tunnelExecutor", "startupTimer")) {
+            val (controller, _) = create(RecordingContext("co.tesair.app", browserProduct = true)) {}
+            val worker = ReflectionHelpers.getField<ExecutorService>(controller, name)
+            val entered = CountDownLatch(1)
+            val release = CountDownLatch(1)
+            worker.execute {
+                entered.countDown()
+                while (release.count > 0) {
+                    try {
+                        release.await()
+                    } catch (_: InterruptedException) {
+                        // Model a platform operation that does not immediately honor interruption.
+                    }
+                }
+            }
+            try {
+                assertTrue("$name started", entered.await(2, TimeUnit.SECONDS))
+                controller.close()
+                val cleanup = ReflectionHelpers.getField<CountDownLatch>(controller, "teardownComplete")
+                assertTrue("$name cleanup finished", cleanup.await(3, TimeUnit.SECONDS))
+                assertFalse("$name must block replacement", controller.awaitClosed(0))
+            } finally {
+                release.countDown()
+            }
+            assertTrue("$name released", controller.awaitClosed(2_000))
+        }
     }
 
     private fun create(context: Context, onHostUi: (AirPlaySession) -> Unit): Pair<CarPlayController, AirPlaySession> {

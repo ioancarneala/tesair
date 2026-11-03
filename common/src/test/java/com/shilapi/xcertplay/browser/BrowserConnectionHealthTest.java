@@ -135,9 +135,11 @@ public class BrowserConnectionHealthTest {
     @Test public void latencyReportsAcceptOnlyBoundedNumericMeasurements() throws Exception {
         String event = BridgeServer.browserDiagnostic(new JSONObject().put("event", "latency")
                 .put("samples", Long.MAX_VALUE).put("decodeAvgUs", -1).put("decodeMaxUs", Long.MAX_VALUE)
-                .put("drawAvgUs", 120).put("drawMaxUs", 240).put("detail", "private data"));
+                .put("drawAvgUs", 120).put("drawMaxUs", 240)
+                .put("presentWaitAvgUs", -1).put("presentWaitMaxUs", Long.MAX_VALUE).put("detail", "private data"));
         assertEquals("browser_latency samples=10000 decodeAvgUs=0 decodeMaxUs=10000000"
-                + " drawAvgUs=120 drawMaxUs=240 decodeQueue=0", event);
+                + " drawAvgUs=120 drawMaxUs=240 presentWaitAvgUs=0 presentWaitMaxUs=10000000"
+                + " framesReceived=0 framesDrawn=0 windowMs=0 requestedFps=0 codec=unknown decodeQueue=0", event);
         message("{\"type\":\"diagnostic\",\"event\":\"latency\"}");
         message("{\"type\":\"diagnostic\",\"event\":\"latency\"}");
         message("{\"type\":\"diagnostic\",\"event\":\"decoder_error\"}");
@@ -236,6 +238,79 @@ public class BrowserConnectionHealthTest {
         server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
         await(() -> sentFrames().containsKey(pts));
         assertEquals(1, server.clientCount());
+    }
+
+    @Test public void startupProbePreservesTheFirstQueuedIdrDuringRequestCooldown() throws Exception {
+        await(() -> senderWaitingIn(FrameQueue.class, "poll"));
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        java.util.concurrent.atomic.AtomicInteger requests = new java.util.concurrent.atomic.AtomicInteger();
+        server.setKeyframeHandler(requests::incrementAndGet);
+        synchronized (queue) {
+            server.videoConfig(new byte[]{0, 0, 0, 1, 0x67, 0x64, 0, 0x28}, 1920, 1080);
+            server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+            message("{\"type\":\"keyframe\",\"reset\":false}");
+            assertFalse("The duplicate startup probe must retain the queued IDR", queue.waitingForKey());
+            assertEquals(0, requests.get());
+        }
+        await(() -> sentFrames().containsKey(pts));
+        assertEquals(1, server.clientCount());
+    }
+
+    @Test public void serverRecoveryProbePreservesTheNewIdrBeforeTheBrowserReplies() throws Exception {
+        fillFrameWindow();
+        ShadowSystemClock.advanceBy(Duration.ofMillis(1600));
+        message("{\"type\":\"ping\"}");
+        await(() -> wireText().contains("\"type\":\"recover\""));
+        await(() -> senderWaitingIn(FrameQueue.class, "poll"));
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        synchronized (queue) {
+            server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+            message("{\"type\":\"keyframe\",\"reset\":false}");
+            assertFalse("The recovery reply must retain the newly arrived IDR", queue.waitingForKey());
+        }
+        await(() -> sentFrames().containsKey(pts));
+        message("{\"type\":\"ack\",\"pts\":" + pts + "}");
+        assertTrue(sentFrames().isEmpty());
+        assertEquals(1, server.clientCount());
+        assertEquals(1, events.stream().filter(value -> value.startsWith("render_ack_recovery")).count());
+    }
+
+    @Test public void quietSourceProbePreservesValidCreditsAndQueuedReferenceFrames() throws Exception {
+        fillFrameWindow();
+        long lastSent = pts;
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        message("{\"type\":\"keyframe\",\"reset\":false}");
+        assertEquals(3, sentFrames().size());
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        assertFalse(queue.waitingForKey());
+        message("{\"type\":\"ack\",\"pts\":" + lastSent + "}");
+        await(() -> sentFrames().containsKey(pts));
+        assertEquals(1, server.clientCount());
+    }
+
+    @Test public void explicitDecoderResetStillInvalidatesCreditsInsideIdrCooldown() throws Exception {
+        fillFrameWindow();
+        message("{\"type\":\"keyframe\",\"reset\":true}");
+        assertTrue(sentFrames().isEmpty());
+        FrameQueue queue = ReflectionHelpers.getField(client, "queue");
+        assertTrue(queue.waitingForKey());
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertTrue(sentFrames().isEmpty());
+    }
+
+    @Test public void heldAcknowledgementsAndAnIndependentSourceExposeTheQueueAgeRecovery() throws Exception {
+        fillFrameWindow();
+        long lastSent = pts;
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        // The source continues independently of the browser's three unacknowledged frames.
+        Thread.sleep(250);
+        server.frame(new byte[]{0, 0, 1, 0x41, 1}, false, ++pts);
+        assertTrue(events.stream().anyMatch(value -> value.startsWith("frame_queue_recovery reason=age ")));
+        message("{\"type\":\"ack\",\"pts\":" + lastSent + "}");
+        server.frame(new byte[]{0, 0, 1, 0x65, 1}, true, ++pts);
+        await(() -> sentFrames().containsKey(pts));
+        assertEquals(1, server.clientCount());
+        assertTrue(events.stream().noneMatch(value -> value.startsWith("render_ack_recovery")));
     }
 
     @Test public void aFullCreditWindowToleratesAShortBurstAndLogsOnlyActualRecovery() throws Exception {

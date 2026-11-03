@@ -22,6 +22,8 @@ import com.shilapi.xcertplay.BrowserTelemetry;
 
 final class BridgeServer extends NanoWSD {
     static final int PORT = 8443;
+    // Decode ACKs let the relay keep more frames in flight only when the measured round trip needs it.
+    private static final int MIN_CREDIT_FRAMES = 3, MAX_CREDIT_FRAMES = 8;
     private final BrowserSession access = new BrowserSession();
     private final Context context;
     private final CopyOnWriteArrayList<Client> clients = new CopyOnWriteArrayList<>();
@@ -31,7 +33,22 @@ final class BridgeServer extends NanoWSD {
     private volatile LongConsumer rendered = epoch -> {};
     private volatile Consumer<String> diagnostic = event -> {};
     private volatile int requestedFps;
+    private volatile boolean browserHevcSupported;
+    private volatile Runnable congestion = () -> {};
+    private volatile Runnable hevcRejected = () -> {};
+    private volatile Runnable hevcCapability = () -> {};
     void setRequestedFps(int fps) { requestedFps = Math.max(0, Math.min(120, fps)); }
+    boolean hevcSupported() { return browserHevcSupported; }
+    void setCongestionHandler(Runnable handler) { congestion = handler != null ? handler : () -> {}; }
+    void setHevcRejectedHandler(Runnable handler) { hevcRejected = handler != null ? handler : () -> {}; }
+    void setHevcCapabilityHandler(Runnable handler) { hevcCapability = handler != null ? handler : () -> {}; }
+    private String pageToken() {
+        try {
+            android.content.pm.PackageInfo info = context.getPackageManager()
+                    .getPackageInfo(context.getPackageName(), 0);
+            return info.versionName + "-" + info.getLongVersionCode();
+        } catch (Exception error) { return "unknown"; }
+    }
     private volatile boolean running = true;
     private volatile Video video;
     private volatile String viewArea;
@@ -73,10 +90,11 @@ final class BridgeServer extends NanoWSD {
                     .put("canvasWidth", canvasWidth).put("canvasHeight", canvasHeight).toString();
         } catch (org.json.JSONException error) { throw new IllegalArgumentException(error); }
     }
-    void browserStatus(String message, boolean error) {
+    synchronized void browserStatus(String message, boolean error) {
         status = message;
         try {
-            String text = new JSONObject().put("type", error ? "error" : "status").put("message", message).toString();
+            String text = new JSONObject().put("type", error ? "error" : "status")
+                    .put("message", message).put("videoReady", video != null).toString();
             for (Client client : clients) { client.pendingStatus.set(text); client.sendSignal.signal(); }
         } catch (org.json.JSONException ignored) { }
     }
@@ -89,9 +107,12 @@ final class BridgeServer extends NanoWSD {
         for (Client client : clients) client.reset();
     }
     synchronized void videoConfig(byte[] config, int width, int height) throws Exception {
+        videoConfig(config, width, height, VideoFormat.codec(config));
+    }
+    synchronized void videoConfig(byte[] config, int width, int height, String codec) throws Exception {
         Video previous = video;
         if (previous != null && previous.width == width && previous.height == height && Arrays.equals(previous.config, config)) return;
-        String json = new JSONObject().put("type", "format").put("codec", VideoFormat.codec(config))
+        String json = new JSONObject().put("type", "format").put("codec", codec)
                 .put("width", width).put("height", height).put("generation", ++epoch)
                 .put("fpsRequested", requestedFps).toString();
         video = new Video(config.clone(), json, epoch, width, height);
@@ -126,19 +147,32 @@ final class BridgeServer extends NanoWSD {
         }
         if ("/session".equals(session.getUri()) && session.getMethod() == Method.POST) {
             if (!running || !sameOrigin(session)) return reply(Response.Status.FORBIDDEN, "text/plain", "Open the display address directly.");
+            int length;
+            try { length = Integer.parseInt(session.getHeaders().getOrDefault("content-length", "-1")); }
+            catch (NumberFormatException error) { length = -1; }
             if (!"application/json".equals(session.getHeaders().get("content-type"))
-                    || !"2".equals(session.getHeaders().get("content-length")) || session.getHeaders().containsKey("transfer-encoding"))
+                    || length < 2 || length > 64 || session.getHeaders().containsKey("transfer-encoding"))
                 return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid session request");
             try {
-                byte[] body = new byte[2]; new java.io.DataInputStream(session.getInputStream()).readFully(body);
-                if (body[0] != '{' || body[1] != '}') return reply(Response.Status.BAD_REQUEST, "text/plain", "Empty JSON required");
-                Response response = reply(Response.Status.OK, "application/json", "{\"ok\":true}");
+                byte[] body = new byte[length];
+                new java.io.DataInputStream(session.getInputStream()).readFully(body);
+                JSONObject request = new JSONObject(new String(body, StandardCharsets.UTF_8));
+                Object hevc = request.opt("hevc");
+                if (hevc != null && !(hevc instanceof Boolean))
+                    return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid session request");
+                // The page probes HEVC before opening the stream; the receiver starts on the socket.
+                browserHevcSupported = Boolean.TRUE.equals(hevc);
+                record("browser_session hevc=" + browserHevcSupported);
+                hevcCapability.run();
+                Response response = reply(Response.Status.OK, "application/json",
+                        "{\"ok\":true,\"page\":\"" + pageToken() + "\"}");
                 response.addHeader("Set-Cookie", access.cookie()); return response;
-            } catch (IOException error) { return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid session request"); }
+            } catch (Exception error) { return reply(Response.Status.BAD_REQUEST, "text/plain", "Invalid session request"); }
         }
         if (session.getMethod() != Method.GET) return reply(Response.Status.METHOD_NOT_ALLOWED, "text/plain", "GET required");
         String path = session.getUri();
         String file = "/".equals(path) || "/index.html".equals(path) ? "index.html" : "/player.js".equals(path) ? "player.js"
+                : "/player-worker.js".equals(path) ? "player-worker.js"
                 : "/telemetry.js".equals(path) ? "telemetry.js" : null;
         if (file == null) return reply(Response.Status.NOT_FOUND, "text/plain", "Not found");
         try (InputStream input = context.getAssets().open("browser/" + file)) {
@@ -226,6 +260,8 @@ final class BridgeServer extends NanoWSD {
         private long lastKeyRequest = -500;
         private volatile long lastAck, acknowledgedPts = -1;
         private long lastBrowserDiagnostic = -1000, lastLatencyDiagnostic = -4000, lastQueueDiagnostic = -10000;
+        private long dropWindowStart, lastCongestionAt = -60_000;
+        private int dropWindowFrames;
         private volatile int[] viewportSize;
         Client(IHTTPSession session) { super(session); }
         @Override public synchronized void sendFrame(WebSocketFrame frame) throws IOException {
@@ -245,10 +281,19 @@ final class BridgeServer extends NanoWSD {
             browserStatus(status, false); connectionChanged.run();
             sender = new Thread(this::sendLoop, "DiPlayBrowserFrames"); sender.start(); requestKeyframe(false);
         }
+        /** One extra frame covers scheduling jitter; slow ACKs raise the window instead of stalling. */
+        private int creditWindow() {
+            int fps = requestedFps > 0 ? requestedFps : 30;
+            long acknowledgeNanos = latency.ackEstimateNanos();
+            if (acknowledgeNanos <= 0) return MIN_CREDIT_FRAMES;
+            int needed = (int) Math.ceil(fps * (acknowledgeNanos / 1_000_000_000.0)) + 1;
+            return Math.max(MIN_CREDIT_FRAMES, Math.min(MAX_CREDIT_FRAMES, needed));
+        }
         private void sendLoop() {
             String sentFormat = null;
             String sentViewArea = null;
-            long sentAt = 0, lastRenderedPts = -1;
+            long sentAt = 0, lastFrameSentNanos = 0, lastRenderedPts = -1;
+            int lastCreditWindow = MIN_CREDIT_FRAMES;
             boolean ackRecovery = false;
             try {
                 while (alive.get() && running) {
@@ -263,9 +308,15 @@ final class BridgeServer extends NanoWSD {
                     if (SystemClock.elapsedRealtime() - lastAck > 5000) { reject("heartbeat_timeout", "Browser stopped responding."); break; }
                     long acked = acknowledgedPts;
                     if (acked > lastRenderedPts) { lastRenderedPts = acked; ackRecovery = false; }
+                    int creditWindow = creditWindow();
+                    if (creditWindow != lastCreditWindow) {
+                        lastCreditWindow = creditWindow;
+                        record("credit_window frames=" + creditWindow + " fps=" + requestedFps
+                                + " acknowledgeUs=" + latency.ackEstimateNanos() / 1000);
+                    }
                     // The same map validates ACKs and bounds in-flight frames. A separate
                     // pending list can drift when reset overlaps a blocked queue read.
-                    if (sentFrames.size() >= 3) {
+                    if (sentFrames.size() >= creditWindow) {
                         if (SystemClock.elapsedRealtime() - sentAt > 1500) {
                             if (ackRecovery) { reject("render_ack_timeout", "Video stalled. Connect again."); break; }
                             // A short decoder pause need not tear down the browser/CarPlay session.
@@ -283,6 +334,18 @@ final class BridgeServer extends NanoWSD {
                     }
                     FrameQueue.Frame next = queue.poll();
                     if (next == null) continue;
+                    // Send at the video's cadence instead of bursting a whole credit window;
+                    // a burst reaches the browser in clumps and presents unevenly at 60 fps.
+                    if (requestedFps > 0) {
+                        long interval = Math.max(1, 1_000_000_000L / requestedFps);
+                        if (lastFrameSentNanos != 0) {
+                            long wait = lastFrameSentNanos + interval - System.nanoTime();
+                            if (wait > 1_000_000L) {
+                                try { Thread.sleep(Math.min(50, wait / 1_000_000L)); }
+                                catch (InterruptedException ignored) { Thread.currentThread().interrupt(); break; }
+                            }
+                        }
+                    }
                     long pts = ByteBuffer.wrap(next.packet(), 1, 8).getLong();
                     long sendStarted = System.nanoTime();
                     synchronized (dispatchLock) {
@@ -295,6 +358,7 @@ final class BridgeServer extends NanoWSD {
                     latency.queued(sendStarted - next.queuedNanos());
                     send(next.packet());
                     latency.written(System.nanoTime() - sendStarted);
+                    lastFrameSentNanos = System.nanoTime();
                     sentAt = SystemClock.elapsedRealtime();
                 }
             } catch (IOException error) { recordClose(running ? "write_io" : "server_stop", false, 0); }
@@ -318,7 +382,23 @@ final class BridgeServer extends NanoWSD {
                             lastAck = now; acknowledgedPts = Math.max(acknowledgedPts, pts);
                         }
                         latency.acknowledged(System.nanoTime() - sent.startedNanos);
-                        sendSignal.signal(); rendered.accept(sent.epoch);
+                        sendSignal.signal();
+                        break;
+                    }
+                    case "presented": {
+                        // Drawing is reported separately so decode credits never wait for the canvas.
+                        Video current = video;
+                        if (current != null) rendered.accept(current.epoch);
+                        break;
+                    }
+                    case "capabilities": {
+                        boolean supported = message.optBoolean("hevc", false);
+                        record("browser_capabilities hevc=" + supported);
+                        if (!supported) {
+                            // The page could not configure its HEVC decoder: rebuild with AVC.
+                            browserHevcSupported = false;
+                            hevcRejected.run();
+                        }
                         break;
                     }
                     case "ping": lastAck = now; pendingPong.set(true); sendSignal.signal(); break;
@@ -335,7 +415,9 @@ final class BridgeServer extends NanoWSD {
                         }
                         break;
                     case "keyframe":
-                        requestKeyframe(true); break;
+                        // Only an explicit reset invalidates credits and queued reference frames.
+                        // Older pages omit the field and rely on the historical reset-on-probe behavior.
+                        requestKeyframe(!Boolean.FALSE.equals(message.opt("reset"))); break;
                     case "gesture":
                         if (video == null || now - lastTouch < 40) return;
                         lastTouch = now; gesture.accept(message); break;
@@ -360,6 +442,17 @@ final class BridgeServer extends NanoWSD {
         private void recordQueueRecovery(FrameQueue.Recovery recovery) {
             record("frame_queue_recovery reason=" + recovery.reason + " dropped=" + recovery.droppedFrames
                     + " bytes=" + recovery.droppedBytes + " oldestAgeMs=" + recovery.oldestAgeNanos / 1_000_000);
+            long now = SystemClock.elapsedRealtime();
+            if (dropWindowStart == 0 || now - dropWindowStart > 10_000) {
+                dropWindowStart = now; dropWindowFrames = 0;
+            }
+            dropWindowFrames += recovery.droppedFrames;
+            // Only a sustained, severe loss asks the app for a cheaper session; a burst is normal.
+            if (dropWindowFrames >= 24 && now - lastCongestionAt >= 30_000) {
+                lastCongestionAt = now; dropWindowFrames = 0;
+                record("link_congestion dropped=24 windowMs=10000");
+                congestion.run();
+            }
             sendSignal.signal();
         }
         private void requestKeyframe(boolean resetQueue) {
@@ -415,6 +508,13 @@ final class BridgeServer extends NanoWSD {
                 + " decodeMaxUs=" + boundedMetric(message, "decodeMaxUs", 10000000)
                 + " drawAvgUs=" + boundedMetric(message, "drawAvgUs", 10000000)
                 + " drawMaxUs=" + boundedMetric(message, "drawMaxUs", 10000000)
+                + " presentWaitAvgUs=" + boundedMetric(message, "presentWaitAvgUs", 10000000)
+                + " presentWaitMaxUs=" + boundedMetric(message, "presentWaitMaxUs", 10000000)
+                + " framesReceived=" + boundedMetric(message, "framesReceived", 100000)
+                + " framesDrawn=" + boundedMetric(message, "framesDrawn", 100000)
+                + " windowMs=" + boundedMetric(message, "windowMs", 600000)
+                + " requestedFps=" + boundedMetric(message, "requestedFps", 240)
+                + " codec=" + codecName(message.optString("codec", ""))
                 + " decodeQueue=" + boundedMetric(message, "decodeQueue", 1000);
         switch (event) {
             case "decoder_error": case "decoder_unsupported": case "decode_backpressure":
@@ -429,6 +529,9 @@ final class BridgeServer extends NanoWSD {
                 + " decodeQueue=" + boundedMetric(message, "decodeQueue", 1000)
                 + " closeCode=" + boundedMetric(message, "closeCode", 4999)
                 + " hidden=" + message.optBoolean("hidden", false);
+    }
+    private static String codecName(String value) {
+        return value != null && value.matches("[A-Za-z0-9.]{1,32}") ? value : "unknown";
     }
     private static long boundedMetric(JSONObject message, String key, long maximum) {
         return Math.max(0, Math.min(maximum, message.optLong(key, 0)));

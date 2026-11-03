@@ -6,27 +6,35 @@ Your iPhone apps on the Tesla screen, with sharp video, responsive touch and sou
 through the car's speakers. Install TesAir on Android and open **go.tesair.co** in
 the Tesla browser.
 
-[**Download TesAir v1.0.6**](https://github.com/ioancarneala/tesair/releases/download/v1.0.6/TesAir-v1.0.6.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
+[**Download TesAir v1.1.0**](https://github.com/ioancarneala/tesair/releases/download/v1.1.0/TesAir-v1.1.0.apk) · [Setup](#setup) · [Release notes](https://github.com/ioancarneala/tesair/releases)
 
 Clear first-time setup, an illustrated iPhone pairing guide and updates you can
-download from the app. **New in v1.0.6:** smoother video, lower standby power use
-and automatic recovery from video format problems.
+download from the app. **New in v1.1.0:** sharper HEVC video, smoother 60 fps,
+faster reconnects and 5 GHz hotspot guidance in setup.
 
 Used daily in a **Tesla Model 3 Highland (HW4)**, with smooth **60 fps** video and
 a stable connection. Tested Android phones: **OnePlus 7T Pro**
 and **Xiaomi 12X**.
 
-## What's new in v1.0.6
+## What's new in v1.1.0
 
-- **More responsive video and touch.** Bounded video queues and browser drawing
-  keep old frames from building up, while retaining picture quality.
-- **Lower standby power use.** The receiver rests when the phone is unplugged,
-  its screen is off and no iPhone or browser is connected. Power return, browser
-  activity and Bluetooth arrival resume the receiver automatically.
-- **Automatic video recovery.** Temporary format changes can settle without
-  restarting CarPlay; persistent format errors trigger automatic reconnection.
-- **Clearer connection diagnostics.** Optional reports include video format and
-  HTTPS identity status to help identify connection and certificate problems.
+- **Sharper HEVC video.** TesAir uses H.265 when the browser supports it and
+  falls back to H.264 automatically, with no reboot or manual reconnect.
+- **Smoother 60 fps.** Frames are paced at the video cadence, drawn off the main
+  thread and sized to the exact browser viewport, so far fewer frames queue or drop.
+- **Lower latency and faster reconnects.** Frame credits are released as soon as
+  the decoder outputs a frame, the window adapts to the measured link, and a
+  dropped socket reuses the existing session.
+- **5 GHz setup guidance.** The network step shows whether the hotspot is on
+  5 GHz when Android exposes the band, or a short tip to choose it.
+- **Recovery without rebooting.** Teardown is bounded, retries no longer interrupt
+  an active iPhone session, and manual Connect cancels any backoff immediately.
+- **Automatic quality step-down.** Sustained frame loss steps quality down once
+  instead of stuttering, and the Tesla page reloads after an app update.
+- **Finer controls and clearer reports.** Interface size now moves in 10 mm
+  steps, and reports include the negotiated codec, requested fps and drawn frames.
+- **Hardening.** Cleartext traffic is disabled, remote MFI requires HTTPS, the
+  CarPlay host activity is no longer exported, and control parsers are bounded.
 
 ## Why TesAir
 
@@ -50,15 +58,18 @@ An iPhone, an Android phone running **Android 9 or later** with Bluetooth and a
 Wi-Fi hotspot, and a Tesla with a browser. The Android phone provides a hotspot
 with internet access; keep it powered during use.
 
-The browser needs WebCodecs video decoding. The confirmed Tesla setup above uses
-AMD Ryzen infotainment.
+The browser needs WebCodecs video decoding. TesAir uses HEVC when the browser
+supports it and falls back to H.264 automatically. The confirmed Tesla setup above
+uses AMD Ryzen infotainment.
 
 ## Setup
 
 1. **Install TesAir on Android.** Follow the guided setup. TesAir checks the
    permissions needed for your Android version.
 2. **Turn on the Android hotspot.** Enter its name and password in TesAir once.
-   Disable automatic hotspot shutoff in its settings if that option is available.
+   Use a **5 GHz** hotspot for the smoothest video (TesAir shows the current band
+   when Android exposes it). Disable automatic hotspot shutoff if that option is
+   available.
 3. **Pair your iPhone.** Keep iPhone Wi-Fi and Bluetooth on. In iPhone Bluetooth
    settings, select the Android name shown in TesAir and confirm the pairing.
    Allow CarPlay when prompted; TesAir sends the hotspot details automatically.

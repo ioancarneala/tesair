@@ -3,11 +3,17 @@ package com.shilapi.xcertplay.browser;
 /** Bounded, content-free timings on the Android monotonic clock. */
 final class BrowserLatencyStats {
     private final Sample queue = new Sample(), write = new Sample(), ack = new Sample();
-    private long reportedAt = System.nanoTime(), creditWaits, creditWaitNanos;
+    private long reportedAt = System.nanoTime(), creditWaits, creditWaitNanos, ackEstimateNanos;
 
     synchronized void queued(long nanos) { queue.add(nanos); }
     synchronized void written(long nanos) { write.add(nanos); }
-    synchronized void acknowledged(long nanos) { ack.add(nanos); }
+    synchronized void acknowledged(long nanos) {
+        long value = Math.max(0, nanos);
+        ack.add(value);
+        // The credit window reads a stable estimate; the five-second report clears its samples.
+        ackEstimateNanos = ackEstimateNanos == 0 ? value : (ackEstimateNanos * 7 + value) / 8;
+    }
+    synchronized long ackEstimateNanos() { return ackEstimateNanos; }
     synchronized void waited(long nanos) { creditWaits++; creditWaitNanos += Math.max(0, nanos); }
 
     synchronized String report(long now) {

@@ -91,13 +91,14 @@ class AirPlaySession(
     internal val isClosed: Boolean get() = closed.get()
     private val notified = AtomicBoolean(false)
     private var eventServer: ServerSocket? = null
-    private var eventSocket: Socket? = null
-    private var eventCipher: ControlCipher? = null
+    @Volatile private var eventSocket: Socket? = null
+    @Volatile private var eventCipher: ControlCipher? = null
     private var eventCseq = 0
     private var pendingNightMode: Boolean? = null
     private val firstTouchSendLogged = AtomicBoolean(false)
     private val touchSendFailureLogged = AtomicBoolean(false)
     private val ntp = NtpClock()
+    private val maxControlBufferBytes = 17 * 1024 * 1024
     private var keepAliveSocket: DatagramSocket? = null
     private var keepAliveThread: Thread? = null
     private val eventWriteLock = Any()
@@ -459,6 +460,7 @@ class AirPlaySession(
                 val activeCipher = cipher
                 if (activeCipher != null) {
                     encBuf += plaintext
+                    if (encBuf.size > maxControlBufferBytes) { closeReason = "control buffer limit"; break }
                     val decrypted = try {
                         activeCipher.decrypt(encBuf)
                     } catch (error: Exception) {
@@ -470,6 +472,7 @@ class AirPlaySession(
                     plaintext = decrypted.data
                 }
                 accumulated += plaintext
+                if (accumulated.size > maxControlBufferBytes) { closeReason = "control buffer limit"; break }
                 val parsed = RtspMessage.parseMessages(accumulated)
                 accumulated = parsed.rest
                 for (request in parsed.messages) {
@@ -888,6 +891,9 @@ class AirPlaySession(
     }
 
     private fun runEventRead(socket: Socket) {
+        val started = System.nanoTime()
+        var endReason = "local_close"
+        var failureClass = "none"
         try {
             val input = BufferedInputStream(socket.getInputStream())
             val output = BufferedOutputStream(socket.getOutputStream())
@@ -896,12 +902,15 @@ class AirPlaySession(
             val buffer = ByteArray(READ_CHUNK_BYTES)
             while (!closed.get()) {
                 val count = input.read(buffer)
-                if (count < 0) break
-                val cipher = eventCipher ?: break
+                if (count < 0) { endReason = if (closed.get()) "local_close" else "eof"; break }
+                val cipher = eventCipher
+                if (cipher == null) { endReason = "cipher_missing"; break }
                 encrypted += buffer.copyOf(count)
                 val decrypted = try {
                     cipher.decrypt(encrypted)
                 } catch (error: Exception) {
+                    endReason = "decrypt_error"
+                    failureClass = error.javaClass.simpleName
                     Log.e(TAG, "airplay event decrypt failed encrypted=${encrypted.size}", error)
                     break
                 }
@@ -927,9 +936,14 @@ class AirPlaySession(
                 }
             }
         } catch (error: Exception) {
-            if (!closed.get()) Log.e(TAG, "airplay event read failed", error)
+            if (!closed.get()) {
+                endReason = "read_error"
+                failureClass = error.javaClass.simpleName
+                Log.e(TAG, "airplay event read failed", error)
+            }
         } finally {
-            debugLog("airplay event connection closed")
+            val elapsedMs = ((System.nanoTime() - started) / 1_000_000).coerceAtLeast(0)
+            debugLog("airplay event connection closed reason=$endReason failureClass=$failureClass elapsedMs=$elapsedMs")
             videoPlaybackAvailability.setEventReady(false)
             if (eventSocket === socket) eventSocket = null
             eventCipher = null

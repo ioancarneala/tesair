@@ -52,6 +52,7 @@ import com.shilapi.xcertplay.browser.BrowserStreamOutput
 class BrowserDashboardActivityTest {
     private val app get() = RuntimeEnvironment.getApplication()
     private var lifecycle: ActivityController<BrowserDashboardActivity>? = null
+    private val connectionOwner = Any()
 
     @Before fun setUp() {
         ShadowBluetoothAdapter.setIsBluetoothSupported(true)
@@ -68,10 +69,12 @@ class BrowserDashboardActivityTest {
         CarPlayBackgroundSession.clear()
         shadowOf(app).grantPermissions(*WirelessPermissions.required(
             Build.VERSION.SDK_INT, WirelessHotspotMode.MANUAL).toTypedArray())
+        if (Build.VERSION.SDK_INT >= 33) shadowOf(app).grantPermissions(Manifest.permission.POST_NOTIFICATIONS)
         while (shadowOf(app).nextStartedService != null) { /* Discard earlier requests. */ }
     }
 
     @After fun tearDown() {
+        connectionStates().release(connectionOwner)
         shadowOf(app.getSystemService(ConnectivityManager::class.java)).clearAllNetworks()
         lifecycle?.destroy()
         ShadowBluetoothAdapter.setIsBluetoothSupported(true)
@@ -120,6 +123,9 @@ class BrowserDashboardActivityTest {
         val stop: ((() -> Unit) -> Unit) = { throw AssertionError("A hardware read must not stop an active session") }
         ReflectionHelpers.setField(CarPlayBackgroundSession, "stopAction", stop)
         CarPlayBackgroundSession.active = true
+        connectionStates().claim(connectionOwner, BrowserConnectionState(requested = true, serverRunning = true,
+            receiver = BrowserReceiverState(phase = BrowserReceiverState.Phase.CONNECTED,
+                sessionRunning = true, iphoneActive = true), browserCount = 1, videoRendered = true))
         shadowOf(app.getSystemService(PowerManager::class.java)).setIgnoringBatteryOptimizations(app.packageName, true)
         shadowOf(app.getSystemService(ActivityManager::class.java)).setBackgroundRestricted(false)
         ShadowBluetoothAdapter.setIsBluetoothSupported(false)
@@ -131,6 +137,9 @@ class BrowserDashboardActivityTest {
         assertTrue(CarPlayBackgroundSession.active)
         assertTrue(CarPlayBackgroundSession.hasSession())
     }
+
+    private fun connectionStates() = ReflectionHelpers.getStaticField<BrowserConnectionStateStore>(
+        DiPlaySessionService::class.java, "connectionStates")
 
     @Test fun openingTheDashboardStartsOnlyTheServiceAndClosingItDoesNotStopTheReceiver() {
         var stops = 0
@@ -312,11 +321,13 @@ class BrowserDashboardActivityTest {
         val activity = openDashboard()
         setHotspotFailure(terminal = true)
         CarPlayBackgroundSession.active = true
+        publishIphoneActive(true)
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "openHotspotSettings")
         lifecycle!!.pause().resume()
         assertNull(shadowOf(app).nextStartedService)
 
         CarPlayBackgroundSession.active = false
+        publishIphoneActive(false)
         setHotspotFailure(terminal = false)
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "openHotspotSettings")
         lifecycle!!.pause().resume()
@@ -330,10 +341,12 @@ class BrowserDashboardActivityTest {
         assertTrue(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
 
         CarPlayBackgroundSession.active = true
+        publishIphoneActive(true)
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "updateStatus")
         assertFalse(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
 
         CarPlayBackgroundSession.active = false
+        publishIphoneActive(false)
         AirPlayPersistence.saveWirelessHotspotMode(app, WirelessHotspotMode.EXISTING_WIFI)
         ReflectionHelpers.callInstanceMethod<Unit>(activity, "updateStatus")
         assertFalse(ReflectionHelpers.getField<BrowserDashboardView.State>(dashboard, "state").hotspotNeedsAttention)
@@ -417,6 +430,16 @@ class BrowserDashboardActivityTest {
             startupFailure = if (terminal) WirelessStartupFailure.HOTSPOT_CONFIGURATION
                 else WirelessStartupFailure.HOTSPOT_NOT_READY))
         ReflectionHelpers.setStaticField(DiPlaySessionService::class.java, "runtime", runtime)
+        connectionStates().claim(connectionOwner, BrowserConnectionState(
+            requested = BrowserSessionRecovery.requested(app), receiver = BrowserReceiverState(
+                phase = BrowserReceiverState.Phase.WAITING, status = runtime.status,
+                setupNeedsAttention = terminal)))
+    }
+
+    private fun publishIphoneActive(active: Boolean) {
+        val current = DiPlaySessionService.currentConnectionState()
+        connectionStates().claim(connectionOwner, current.copy(
+            receiver = current.receiver.copy(iphoneActive = active)))
     }
 
     @Implements(WifiManager::class)

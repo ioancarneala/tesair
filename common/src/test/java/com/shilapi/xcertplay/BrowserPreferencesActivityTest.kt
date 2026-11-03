@@ -8,6 +8,7 @@ import android.view.Surface
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.TimePicker
@@ -174,7 +175,7 @@ class BrowserPreferencesActivityTest {
         val controller = retainSession(screen)
         row(screen, R.string.settings_browser_preferences_interface_size).performClick()
         var dialog = latestDialog()
-        assertEquals(4, dialog.listView.adapter.count)
+        assertEquals(5, dialog.listView.adapter.count)
         assertEquals(2, dialog.listView.checkedItemPosition)
         dialog.listView.performItemClick(null, 0, 0)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).performClick()
@@ -192,6 +193,32 @@ class BrowserPreferencesActivityTest {
         assertEquals(100, AirPlayPersistence.loadWidthPhysicalMm(app))
         assertEquals(160, AirPlayPersistence.loadBrowserResolutionPercent(app))
         assertTrue(AirPlayPersistence.loadBrowserDirectAudio(app))
+        val target = shadowOf(screen).nextStartedActivity
+        assertEquals(BrowserDashboardActivity::class.java.name, target?.component?.className)
+        assertTrue(target!!.getBooleanExtra(BrowserDashboardActivity.EXTRA_RECONNECT, false))
+        verifyNoInteractions(controller)
+    }
+
+    @Test fun customInterfaceSizeUsesTenMillimetreStepsAndReconnects() {
+        AirPlayPersistence.saveWidthPhysicalMm(app, 150)
+        val screen = openPicture()
+        val controller = retainSession(screen)
+        row(screen, R.string.settings_browser_preferences_interface_size).performClick()
+        val choices = latestDialog()
+        assertEquals(5, choices.listView.adapter.count)
+        choices.listView.performItemClick(null, 4, 4)
+        choices.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        val custom = latestDialog()
+        val slider = descendants(custom.window!!.decorView).filterIsInstance<SeekBar>().single()
+        assertEquals(30, slider.max)
+        assertEquals(5, slider.progress)
+        slider.progress = 2
+        custom.getButton(AlertDialog.BUTTON_POSITIVE).performClick()
+        shadowOf(Looper.getMainLooper()).idle()
+
+        assertEquals(120, AirPlayPersistence.loadWidthPhysicalMm(app))
         val target = shadowOf(screen).nextStartedActivity
         assertEquals(BrowserDashboardActivity::class.java.name, target?.component?.className)
         assertTrue(target!!.getBooleanExtra(BrowserDashboardActivity.EXTRA_RECONNECT, false))

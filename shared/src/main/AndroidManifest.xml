@@ -43,7 +43,7 @@
         </intent>
     </queries>
 
-    <application android:usesCleartextTraffic="true">
+    <application>
         <!-- Minimum Car API level -->
         <meta-data
             android:name="androidx.car.app.minCarApiLevel"

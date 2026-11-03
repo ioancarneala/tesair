@@ -415,12 +415,189 @@ class BrowserTelemetryTest {
         })
     }
 
+    @Test fun rateLimitDeadlineSurvivesRestartAndCannotBeBypassedByImmediateEvents() {
+        online = true
+        transport.status = 429
+        transport.retryDelay = 86_400_000L
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        assertEquals(1, transport.calls.size)
+        val id = engine.installationId()
+        engine.shutdown()
+        elapsed = 10L // A reboot resets monotonic time; the persisted wall deadline still applies.
+        time += 60 * 60_000L
+        engine = newEngine()
+        engine.record("browser_error", mapOf("reason" to "decoder_failed"))
+        engine.pump()
+        assertTrue(engine.awaitIdle())
+        assertEquals(1, transport.calls.size)
+        assertEquals(id, engine.installationId())
+        assertTrue((0 until queue().length()).any { queue().getJSONObject(it).getString("name") == "browser_error" })
+        time += 23 * 60 * 60_000L + 1
+        elapsed += 23 * 60 * 60_000L + 1
+        transport.status = 200
+        transport.retryDelay = null
+        engine.pump()
+        assertTrue(engine.awaitIdle())
+        assertEquals(3, transport.calls.size)
+        assertEquals(0, queue().length())
+    }
+
+    @Test fun unavailableEventEndpointHonorsServerDelayAndRetainsStableQueuedIds() {
+        online = true
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        transport.status = 503
+        transport.retryDelay = 3_600_000L
+        engine.record("browser_error", mapOf("reason" to "video_config_rejected"))
+        assertTrue(engine.awaitIdle())
+        val ids = queue().toString()
+        val calls = transport.calls.size
+        elapsed += 60_001; time += 60_001
+        engine.pump()
+        assertTrue(engine.awaitIdle())
+        assertEquals(calls, transport.calls.size)
+        assertEquals(ids, queue().toString())
+        elapsed += 3_600_000; time += 3_600_000
+        transport.status = 200
+        engine.pump()
+        assertTrue(engine.awaitIdle())
+        assertEquals(calls + 1, transport.calls.size)
+        assertEquals(0, queue().length())
+    }
+
+    @Test fun corruptOrClockShiftedStoredDeadlinesCannotRenewAFullDayHoldAcrossRestarts() {
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val preferences = app.getSharedPreferences("browser_telemetry", Context.MODE_PRIVATE)
+        val invalid: List<Any> = listOf(Long.MAX_VALUE, Long.MIN_VALUE, time + BrowserTelemetryDeliveryPolicy.MAX_SERVER_DELAY_MS + 1,
+            time - 1, "not_a_timestamp")
+        for (value in invalid) {
+            engine.shutdown()
+            preferences.edit().apply {
+                if (value is Long) putLong("serverRetryUntilMs", value) else putString("serverRetryUntilMs", value.toString())
+            }.commit()
+            val before = transport.calls.size
+            online = true
+            engine = newEngine()
+            engine.record("browser_error", mapOf("reason" to "decoder_failed"))
+            assertTrue(engine.awaitIdle())
+            assertTrue("invalid deadline=$value", transport.calls.size > before)
+            assertFalse(preferences.contains("serverRetryUntilMs"))
+            engine.shutdown()
+            engine = newEngine()
+            engine.record("browser_error", mapOf("reason" to "decoder_failed"))
+            assertTrue(engine.awaitIdle())
+            assertTrue(transport.calls.size > before + 1)
+        }
+    }
+
+    @Test fun repeatedAutomaticRetriesAreSparseWithoutSamplingOnboardingOrManualAttempts() {
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        repeat(40) { attempt ->
+            engine.record("connection_attempt_started", mapOf("attempt" to attempt, "automatic" to true))
+            engine.record("recovery_scheduled", mapOf("attempt" to attempt, "reason" to "transport_error"))
+            engine.record("receiver_start_failed", mapOf("attempt" to attempt, "reason" to "startup_failed"))
+            engine.record("onboarding_step_completed", mapOf("step" to "BACKGROUND"))
+        }
+        assertTrue(engine.awaitIdle())
+        fun count(name: String) = (0 until queue().length()).count { queue().getJSONObject(it).getString("name") == name }
+        assertEquals(1, count("connection_attempt_started"))
+        assertEquals(1, count("recovery_scheduled"))
+        assertEquals(1, count("receiver_start_failed"))
+        assertEquals(40, count("onboarding_step_completed"))
+        engine.record("recovery_scheduled", mapOf("reason" to "bluetooth_off"))
+        engine.record("connection_attempt_started", mapOf("automatic" to false))
+        elapsed += BrowserTelemetryDeliveryPolicy.REPEATED_ATTEMPT_INTERVAL_MS
+        time += BrowserTelemetryDeliveryPolicy.REPEATED_ATTEMPT_INTERVAL_MS
+        engine.record("connection_attempt_started", mapOf("attempt" to 100, "automatic" to true))
+        assertTrue(engine.awaitIdle())
+        assertEquals(2, count("recovery_scheduled"))
+        assertEquals(3, count("connection_attempt_started"))
+    }
+
+    @Test fun performanceSummariesCannotAloneExceedTheDailyIngestionQuota() {
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        repeat(12) {
+            engine.record("performance_summary", mapOf("fpsDecoded" to 30))
+            assertTrue(engine.awaitIdle())
+            elapsed += 60_000; time += 60_000
+        }
+        assertEquals(3, (0 until queue().length()).count { queue().getJSONObject(it).getString("name") == "performance_summary" })
+    }
+
+    @Test fun aNewReceiverSessionAlwaysKeepsItsFirstAutomaticAttempt() {
+        engine.setEnabled(true)
+        repeat(2) {
+            engine.record("receiver_start_requested")
+            engine.record("connection_attempt_started", mapOf("automatic" to true, "attempt" to 1))
+            engine.record("receiver_start_failed", mapOf("reason" to "startup_failed"))
+            engine.record("session_ended", mapOf("reason" to "receiver_closed"))
+        }
+        assertTrue(engine.awaitIdle())
+        val all = queue()
+        val attempts = (0 until all.length()).map { all.getJSONObject(it) }.filter { it.getString("name") == "connection_attempt_started" }
+        assertEquals(2, attempts.size)
+        assertNotEquals(attempts.first().getString("sessionId"), attempts.last().getString("sessionId"))
+        assertEquals(2, (0 until all.length()).count { all.getJSONObject(it).getString("name") == "receiver_start_failed" })
+    }
+
+    @Test fun manualHelpFeedbackUploadsPromptlyWithoutInventingAnOperationalFailure() {
+        online = true
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val before = transport.calls.count { it.path == "/v1/events" }
+        engine.record("diagnostic_feedback", mapOf("step" to "browser", "result" to "needs_help"))
+        assertTrue(engine.awaitIdle())
+        assertEquals(before + 1, transport.calls.count { it.path == "/v1/events" })
+        val sent = JSONObject(transport.calls.last().body!!).getJSONArray("events").getJSONObject(0)
+        assertEquals("diagnostic_feedback", sent.getString("name"))
+        assertEquals("needs_help", sent.getJSONObject("attributes").getString("result"))
+    }
+
+    @Test fun withdrawalAndDeletionDuringServerCooldownNeverUploadRevokedEvents() {
+        online = true
+        transport.status = 429
+        transport.retryDelay = 3_600_000L
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        val oldId = engine.installationId()
+        val old = queue()
+        val oldIds = (0 until old.length()).map { old.getJSONObject(it).getString("id") }.toSet()
+        engine.setEnabled(false)
+        engine.record("iphone_connected")
+        assertTrue(engine.awaitIdle())
+        assertFalse(File(app.noBackupFilesDir, "telemetry/events.json").exists())
+        engine.deleteData {}
+        assertTrue(engine.awaitIdle())
+        assertNull(engine.installationId())
+        assertEquals(1, transport.calls.size)
+        engine.shutdown()
+        engine = newEngine()
+        engine.setEnabled(true)
+        assertTrue(engine.awaitIdle())
+        assertNotEquals(oldId, engine.installationId())
+        assertTrue((0 until queue().length()).none { queue().getJSONObject(it).getString("id") in oldIds })
+        assertEquals(1, transport.calls.size)
+        elapsed += 3_600_001; time += 3_600_001
+        transport.status = 200
+        transport.retryDelay = null
+        engine.pump()
+        assertTrue(engine.awaitIdle())
+        assertTrue(transport.calls.any { it.method == "DELETE" && it.path == "/v1/installations/$oldId" })
+        assertEquals(0, queue().length())
+        assertNull(app.getSharedPreferences("browser_telemetry", Context.MODE_PRIVATE).getString("pendingDeletion", null))
+    }
+
     private data class Call(val method: String, val path: String, val token: String?, val body: String?)
     private class FakeTransport : BrowserTelemetryTransport {
         val calls = mutableListOf<Call>()
         var status = 200
         var cancelled = false
         var serverDate: Long? = null
+        var retryDelay: Long? = null
         var holdEnrollment = false
         var rejectLargeEventBatches = false
         val enrollmentStarted = CountDownLatch(1)
@@ -437,5 +614,6 @@ class BrowserTelemetryTest {
         }
         override fun cancel() { cancelled = true }
         override fun serverTimeMillis(): Long? = serverDate
+        override fun retryAfterMillis(): Long? = retryDelay
     }
 }

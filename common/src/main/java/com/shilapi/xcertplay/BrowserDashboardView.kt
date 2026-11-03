@@ -55,6 +55,7 @@ internal class BrowserDashboardView(
         val receiverFailed: Boolean = false,
         val addressNeedsHelp: Boolean = false,
         val stopped: Boolean = false,
+        val receiverStarting: Boolean = false,
     ) {
         val pictureReady get() = !setupNeedsAttention && serverRunning && iphoneActive && browserConnected && videoRendered
         val ready get() = pictureReady && !permissionsRequired && batteryAllowed
@@ -63,6 +64,7 @@ internal class BrowserDashboardView(
             permissionsRequired -> Step.PERMISSIONS
             bluetoothUnavailable && !iphoneActive -> Step.BLUETOOTH_UNAVAILABLE
             !batteryAllowed -> Step.BACKGROUND
+            receiverStarting -> Step.STARTING
             stopped -> Step.STOPPED
             pictureReady -> Step.READY
             bluetoothRequired -> Step.BLUETOOTH
